@@ -1,0 +1,223 @@
+# TB and Immune-Related Gene Sets for MAGMA
+# Format: GENESET_NAME gene1 gene2 gene3 ...
+# Each line = one gene set
+
+# -------------------------------------------------------
+# TB Susceptibility Genes (Known from GWAS/Literature)
+# -------------------------------------------------------
+TB_SUSCEPTIBILITY TLR1 TLR2 TLR4 TLR6 TLR8 TLR9 SLC11A1 NRAMP1 IFNG IFNGR1 IFNGR2 IL12B IL12RB1 IL12RB2 VDR TIRAP DC-SIGN SP110 IRGM P2RX7 CCL2 NOS2A TNF IL10 IL1A IL1B CARD9 IL23R ASAP1 WT1 MCL1
+
+# -------------------------------------------------------
+# Autophagy Pathway
+# -------------------------------------------------------
+AUTOPHAGY ATG5 ATG7 ATG12 ATG16L1 ATG16L2 IRGM LRRK2 PARK7 SQSTM1 ULK1 ULK2 BECN1 MAP1LC3A MAP1LC3B GABARAP ATG3 ATG4A ATG4B ATG4C ATG4D ATG9A ATG9B ATG10 ATG13 ATG14 UVRAG PIK3C3 PIK3R4 AMBRA1 RUBCN WIPI1 WIPI2 NBR1 OPTN CALCOCO2 TAX1BP1
+
+# -------------------------------------------------------
+# Inflammasome Pathway
+# -------------------------------------------------------
+INFLAMMASOME NLRP3 PYCARD ASC CASP1 CASP4 CASP5 IL1B IL18 CARD8 NLRC4 AIM2 NLRP1 NLRP6 NLRP7 NLRP12 GSDMD NEK7 TXNIP
+
+# -------------------------------------------------------
+# Cytokine Signaling
+# -------------------------------------------------------
+CYTOKINE_SIGNALING IL10 IL6 IL1A IL1B TNF TNFA TNFRSF1A TNFRSF1B CCL2 CCL3 CCL4 CCL5 CXCL8 CXCL9 CXCL10 CXCL11 IFNG IFNA1 IFNB1 IL12A IL12B IL23A IL17A IL17F IL22 IL4 IL5 IL13 CSF2 CSF3 TGFB1 IL27
+
+# -------------------------------------------------------
+# MHC Class I
+# -------------------------------------------------------
+MHC_CLASS_I HLA-A HLA-B HLA-C HLA-E HLA-F HLA-G B2M TAP1 TAP2 TAPBP PSMB8 PSMB9 ERAP1 ERAP2
+
+# -------------------------------------------------------
+# MHC Class II
+# -------------------------------------------------------
+MHC_CLASS_II HLA-DRA HLA-DRB1 HLA-DRB3 HLA-DRB4 HLA-DRB5 HLA-DQA1 HLA-DQB1 HLA-DPA1 HLA-DPB1 HLA-DMA HLA-DMB HLA-DOA HLA-DOB CD74 CIITA
+
+# -------------------------------------------------------
+# Macrophage Function
+# -------------------------------------------------------
+MACROPHAGE_FUNCTION CD14 CD40 CD80 CD86 MARCO FCGR1A FCGR2A FCGR2B FCGR3A FCGR3B CR1 CR3 ITGAM ITGAX CD68 MSR1 COLEC12 CD163 MRC1 CLEC7A CLEC4E TLR2 TLR4 NOD2 CYBB NCF1 NCF2 NCF4
+
+# -------------------------------------------------------
+# T Cell Activation
+# -------------------------------------------------------
+T_CELL_ACTIVATION CD3D CD3E CD3G CD4 CD8A CD8B CD28 CTLA4 PDCD1 CD274 PDCD1LG2 ICOS ICOSLG CD27 CD70 TNFRSF4 TNFSF4 CD137 TNFSF9 LAG3 HAVCR2 TIGIT IL2 IL2RA IL2RB IL2RG STAT5A STAT5B
+
+# -------------------------------------------------------
+# Th1 Response
+# -------------------------------------------------------
+TH1_RESPONSE IFNG IL12B IL12RB1 IL12RB2 IL18 IL18R1 TBX21 STAT1 STAT4 IL2 IL15 IL27 CXCR3 CCR5
+
+# -------------------------------------------------------
+# Th2 Response
+# -------------------------------------------------------
+TH2_RESPONSE IL4 IL5 IL13 IL4R IL13RA1 GATA3 STAT6 CCR4 CCR8
+
+# -------------------------------------------------------
+# Th17 Response
+# -------------------------------------------------------
+TH17_RESPONSE IL17A IL17F IL17RA IL21 IL22 IL23A IL23R IL6 IL6R RORC STAT3 CCR6
+
+# -------------------------------------------------------
+# Treg Response
+# -------------------------------------------------------
+TREG_RESPONSE FOXP3 IL10 IL10RA IL10RB TGFB1 TGFBR1 TGFBR2 CTLA4 CD25 IL2RA TNFRSF18 TNFRSF4
+
+# -------------------------------------------------------
+# NK Cell Function
+# -------------------------------------------------------
+NK_CELL_FUNCTION NCAM1 NCR1 NCR2 NCR3 KLRK1 KLRD1 KIR2DL1 KIR2DL2 KIR2DL3 KIR3DL1 GZMB PRF1 FASLG IFNG
+
+# -------------------------------------------------------
+# Complement Pathway
+# -------------------------------------------------------
+COMPLEMENT C1QA C1QB C1QC C1R C1S C2 C3 C4A C4B C5 C6 C7 C8A C8B C8G C9 CFB CFD CFH CFI CR1 CR2 ITGAM ITGAX
+
+# -------------------------------------------------------
+# Pattern Recognition Receptors
+# -------------------------------------------------------
+PATTERN_RECOGNITION TLR1 TLR2 TLR3 TLR4 TLR5 TLR6 TLR7 TLR8 TLR9 TLR10 NOD1 NOD2 NLRP3 NLRC4 AIM2 DDX58 IFIH1 MAVS MYD88 TICAM1 TICAM2
+
+# -------------------------------------------------------
+# Interferon Response
+# -------------------------------------------------------
+INTERFERON_RESPONSE IFNG IFNA1 IFNB1 IFNAR1 IFNAR2 IFNGR1 IFNGR2 STAT1 STAT2 IRF1 IRF3 IRF7 IRF8 IRF9 JAK1 JAK2 TYK2 MX1 MX2 OAS1 OAS2 OAS3 ISG15 ISG20
+
+# -------------------------------------------------------
+# NF-kB Signaling
+# -------------------------------------------------------
+NFKB_SIGNALING NFKB1 NFKB2 RELA RELB REL NFKBIA NFKBIB NFKBIE IKBKA IKBKB IKBKG CHUK RIPK1 RIPK2 TRAF6 IRAK1 IRAK4 MYD88
+
+# -------------------------------------------------------
+# JAK-STAT Signaling
+# -------------------------------------------------------
+JAK_STAT_SIGNALING JAK1 JAK2 JAK3 TYK2 STAT1 STAT2 STAT3 STAT4 STAT5A STAT5B STAT6 SOCS1 SOCS3 PIAS1 PIAS2 PIAS3 PIAS4
+
+# -------------------------------------------------------
+# Apoptosis
+# -------------------------------------------------------
+APOPTOSIS CASP1 CASP3 CASP7 CASP8 CASP9 CASP10 FADD FAS FASLG TNFRSF1A TNFRSF10A TNFRSF10B BAX BAK1 BCL2 BCL2L1 MCL1 BID APAF1 CYCS
+
+# -------------------------------------------------------
+# Vitamin D Signaling
+# -------------------------------------------------------
+VITAMIN_D_SIGNALING VDR RXRA CYP27B1 CYP24A1 GC CAMP DEFB4A LTF
+
+# -------------------------------------------------------
+# Iron Metabolism
+# -------------------------------------------------------
+IRON_METABOLISM SLC11A1 SLC40A1 TFRC TF HAMP FTH1 FTL CP STEAP3 CYBRD1
+
+# -------------------------------------------------------
+# Phagosome Maturation
+# -------------------------------------------------------
+PHAGOSOME RAB5A RAB7A LAMP1 LAMP2 ATP6V0D1 ATP6V1A CTSD CTSB CTSL M6PR IGF2R SNX1 SNX2 VPS11 VPS18 VPS33A VPS39 VPS41
+
+# -------------------------------------------------------
+# Reactive Oxygen Species
+# -------------------------------------------------------
+ROS_PRODUCTION CYBB NCF1 NCF2 NCF4 CYBA NOX1 NOX2 NOX4 SOD1 SOD2 CAT GPX1 GPX4
+
+# -------------------------------------------------------
+# Nitric Oxide Production
+# -------------------------------------------------------
+NO_PRODUCTION NOS1 NOS2 NOS3 ARG1 ARG2
+
+# -------------------------------------------------------
+# Lipid Metabolism (MAF-specific)
+# -------------------------------------------------------
+LIPID_METABOLISM APOE APOA1 APOC3 LCAT CETP LDLR SCARB1 ABCA1 ABCG1 CD36 MSR1 SOAT1 NCEH1 PLIN2 PLIN3
+
+# -------------------------------------------------------
+# Cell Adhesion
+# -------------------------------------------------------
+CELL_ADHESION ICAM1 ICAM2 VCAM1 SELE SELP ITGAL ITGAM ITGAX ITGB2 PECAM1 CDH1 CDH5
+
+# -------------------------------------------------------
+# Chemokine Receptors
+# -------------------------------------------------------
+CHEMOKINE_RECEPTORS CCR1 CCR2 CCR3 CCR4 CCR5 CCR6 CCR7 CCR8 CCR9 CXCR1 CXCR2 CXCR3 CXCR4 CXCR5 CXCR6 CX3CR1
+
+# -------------------------------------------------------
+# Dendritic Cell Function
+# -------------------------------------------------------
+DENDRITIC_CELL CD1A CD1B CD1C CD1D CD1E CD83 CD209 CLEC4A CLEC9A XCR1 FCER1A FCER1G ITGAX HLA-DRA HLA-DRB1
+
+# -------------------------------------------------------
+# B Cell Function
+# -------------------------------------------------------
+B_CELL_FUNCTION CD19 CD20 MS4A1 CD22 CD79A CD79B CR2 FCGR2B IGHM IGHG1 IGHG2 IGHA1 IGHA2 PAX5 EBF1
+
+# -------------------------------------------------------
+# Antimicrobial Peptides
+# -------------------------------------------------------
+ANTIMICROBIAL_PEPTIDES CAMP DEFB1 DEFB4A DEFB103A DEFB104A LTF LCN2 S100A7 S100A8 S100A9 RNASE3
+
+# -------------------------------------------------------
+# ER Stress Response
+# -------------------------------------------------------
+ER_STRESS XBP1 ATF4 ATF6 ERN1 EIF2AK3 DDIT3 HSPA5 DNAJC3 PPP1R15A
+
+# -------------------------------------------------------
+# Ubiquitin-Proteasome System
+# -------------------------------------------------------
+UBIQUITIN_PROTEASOME UBE2N UBE2V1 TRAF6 SMURF1 NEDD4 ITCH STUB1 PSMA1 PSMA2 PSMB5 PSMB8 PSMB9 PSMB10 USP7 USP15
+
+# -------------------------------------------------------
+# mTOR Signaling
+# -------------------------------------------------------
+MTOR_SIGNALING MTOR RPTOR RICTOR AKT1 AKT2 TSC1 TSC2 RHEB RPS6KB1 EIF4EBP1
+
+# -------------------------------------------------------
+# PI3K-AKT Signaling
+# -------------------------------------------------------
+PI3K_AKT PIK3CA PIK3CB PIK3CD PIK3CG PIK3R1 PIK3R2 AKT1 AKT2 AKT3 PDK1 PTEN FOXO1 FOXO3 GSK3B
+
+# -------------------------------------------------------
+# MAPK Signaling
+# -------------------------------------------------------
+MAPK_SIGNALING MAP2K1 MAP2K2 MAP2K3 MAP2K4 MAP2K6 MAP2K7 MAPK1 MAPK3 MAPK8 MAPK9 MAPK11 MAPK14 JUN FOS
+
+# -------------------------------------------------------
+# Calcium Signaling
+# -------------------------------------------------------
+CALCIUM_SIGNALING CALM1 CALM2 CALM3 CAMK2A CAMK2B CAMK2D CAMK2G CAMK4 NFATC1 NFATC2 NFATC3 PPP3CA PPP3CB
+
+# -------------------------------------------------------
+# Type I Interferon Response
+# -------------------------------------------------------
+TYPE_I_INTERFERON IFNA1 IFNA2 IFNB1 IFNAR1 IFNAR2 TYK2 JAK1 STAT1 STAT2 IRF9 MX1 OAS1 ISG15
+
+# -------------------------------------------------------
+# Type II Interferon Response
+# -------------------------------------------------------
+TYPE_II_INTERFERON IFNG IFNGR1 IFNGR2 JAK1 JAK2 STAT1 IRF1 CXCL9 CXCL10 CXCL11 IDO1 NOS2
+
+# -------------------------------------------------------
+# Granuloma Formation
+# -------------------------------------------------------
+GRANULOMA_FORMATION TNF TNFRSF1A TNFRSF1B CCL2 CCL3 CCL4 CCL5 CXCL9 CXCL10 MMP9 TIMP1 VIM SPP1 CD44
+
+# -------------------------------------------------------
+# Necroptosis
+# -------------------------------------------------------
+NECROPTOSIS RIPK1 RIPK3 MLKL FADD CASP8 TNFRSF1A ZBP1 TLR3 TLR4
+
+# -------------------------------------------------------
+# Pyroptosis
+# -------------------------------------------------------
+PYROPTOSIS GSDMD GSDME CASP1 CASP4 CASP5 CASP11 NLRP3 PYCARD IL1B IL18
+
+# -------------------------------------------------------
+# Efferocytosis
+# -------------------------------------------------------
+EFFEROCYTOSIS MERTK AXL TYRO3 GAS6 PROS1 C1QA C1QB MEGF10 CD36 ITGAV ITGB3 ITGB5
+
+# -------------------------------------------------------
+# Metabolic Reprogramming
+# -------------------------------------------------------
+METABOLIC_REPROGRAMMING HIF1A LDHA PKM SLC2A1 PFKFB3 ENO1 GAPDH IDH1 IDH2 ACO2 CS MDH2
+
+# -------------------------------------------------------
+# Cholesterol Metabolism
+# -------------------------------------------------------
+CHOLESTEROL_METABOLISM HMGCR HMGCS1 MVK FDFT1 SQLE DHCR7 DHCR24 LDLR APOE NPC1 NPC2 ABCA1 ABCG1

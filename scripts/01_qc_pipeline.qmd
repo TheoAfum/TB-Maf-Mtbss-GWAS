@@ -1,0 +1,1805 @@
+---
+title: "Host_Genetics_Analysis"
+---
+
+
+#Make sure you have all the files needed to start. If you using PLINK files. Make sure you have the .bim, .fam and .bed files.
+
+#Also have the reference to which the genome was mapped. Remember to index the refence before use
+
+Examples
+
+`{=} H3_Africa_order_3220_original_annotation.anno.txt  H3_Africa_order_3220_original_annotation.fam H3_Africa_order_3220_original_annotation.bed        H3_Africa_order_3220_original_annotation.bim        human_g1k_v37.fasta human_g1k_v37.fasta.fai` \## Quick sanity check: build & contigs
+
+Just to be sure everything matches:
+
+```{bash}
+# Check chromosome naming in your BIM
+head H3_Africa_order_3220_original_annotation.bim
+
+# Check contigs in the reference FASTA index
+head human_g1k_v37.fasta.fai
+```
+
+## 1. Remove ambiguous strand SNPs (A/T and C/G)
+
+These SNPs are impossible to orient confidently (A↔T, C↔G look the same on the opposite strand), so best practice is to **remove them before strand alignment**.
+
+```{bash}
+# 1. Make a list of ambiguous SNPs (A/T and C/G) from the BIM
+awk '($5$6=="AT" || $5$6=="TA" || $5$6=="CG" || $5$6=="GC") {print $2}' \
+    H3_Africa_order_3220_original_annotation.bim > ambiguous_AT_CG.snps
+
+wc -l ambiguous_AT_CG.snps   # how many are ambiguous
+
+# 2. Create a cleaned PLINK set without these problematic SNPs
+plink --bfile H3_Africa_order_3220_original_annotation \
+      --exclude ambiguous_AT_CG.snps \
+      --make-bed \
+      --out H3_noAmbig
+```
+
+Now `H3_noAmbig.{bed,bim,fam}` is your **working dataset** without A/T or C/G SNPs.
+
+**Best practices : Always have a QC_tracker**
+
+This will help ypu update a CSV file after each major step and records items such as variants remaining, variants excluded, number of individuals (males vs females) number of cases and controls etc.
+
+You can modify and run the below R script after doing these 2 after each step
+
+```{bash}
+plink --bfile H3_noAmbig --missing --out H3_noAmbig
+
+Rscript qc_tracker.R H3_noAmbig "Removed ambiguous A/T & C/G SNPs"
+```
+
+Save the below Rscript as **qc.tracker.R**
+
+```{r}
+#!/usr/bin/env Rscript
+
+############################################################
+# QC PROGRESS TRACKER (with filter metadata)
+# ------------------------------------------
+# Usage:
+#   Rscript qc_tracker.R <plink_prefix> "<step_name>" [qc_csv] [options]
+#
+# Options (all optional, free text allowed):
+#   --snp-miss <value>       # e.g. 0.05 for --geno 0.05
+#   --sample-miss <value>    # e.g. 0.05 for --mind 0.05
+#   --maf <value>            # e.g. 0.01 for --maf 0.01
+#   --hwe <value>            # e.g. 1e-6 for --hwe 1e-6
+#   --info <value>           # e.g. 0.8 for post-imputation info filter
+#   --other "<free text>"    # any notes, multiple words allowed
+#
+# Examples:
+#   Rscript qc_tracker.R H3_noAmbig "Removed ambiguous SNPs"
+#
+#   Rscript qc_tracker.R H3_mind0.05 "Sample missingness filter" QC_progress_tracker.csv \
+#       --sample-miss 0.05
+#
+#   Rscript qc_tracker.R H3_maf0.01_hwe1e-6 "MAF + HWE filter" QC_progress_tracker.csv \
+#       --maf 0.01 --hwe 1e-6 --snp-miss 0.05 \
+#       --other "Autosomes only; removed monomorphic SNPs"
+#
+############################################################
+
+
+
+## 2. Convert to VCF and align alleles to human_g1k_v37.fasta
+
+Here we use **bcftools +fixref** to ensure the **REF allele** always matches the base in `human_g1k_v37.fasta`.\
+If the variant is on the opposite strand, `fixref` will complement alleles; if REF/ALT are swapped, it will fix that too.
+
+### **2a. PLINK → VCF**
+
+```{bash}
+plink --bfile H3_noAmbig \
+      --recode vcf bgz \
+      --out H3_noAmbig_raw
+
+# creates H3_noAmbig_raw.vcf.gz
+```
+
+### 2b. Use bcftools +fixref to fix strand & REF mismatches
+
+```{bash}
+# Index the VCF (bcftools likes it indexed)
+bcftools index H3_noAmbig_raw.vcf.gz
+
+# Run fixref:
+#  -f human_g1k_v37.fasta : reference genome
+#  -m top : try to flip strand and/or swap REF/ALT so that REF matches fasta
+#  -d     : drop variants that still cannot be fixed
+bcftools +fixref H3_noAmbig_raw.vcf.gz \
+    -Oz -o H3_refAligned.vcf.gz \
+    -- -f human_g1k_v37.fasta -m top -d
+
+# Index the fixed VCF
+bcftools index H3_refAligned.vcf.gz
+```
+
+What this does conceptually:
+
+-   For every variant, it looks at `CHR:POS` in the FASTA.
+
+-   If your REF is wrong but its **complement** matches the FASTA, it **flips strand**.
+
+-   If REF/ALT are swapped, it swaps them.
+
+-   If it still can’t make your REF match the reference base, it **drops** the variant
+
+-   You can see how many were dropped by:
+
+```{bash}
+bcftools view -H H3_noAmbig_raw.vcf.gz | wc -l
+bcftools view -H H3_refAligned.vcf.gz  | wc -l
+```
+
+Difference = number of unresolved mismatches removed.
+
+In this H3_noAmbig_raw = 2186579\
+H3_refAlignd= 2141373
+
+Note: After conversion to VCF and conversion back to PLINK, phenotype data (case/control) and sex (male/female) are lost. You will need to copy them from your original fam file into the new one created.
+
+### 2c. Rscript to restore sex & phenotype
+
+Save this as `restore_fam_metadata.R` in your working directory:\
+Note: FID and IID in new .fam may differ from the old. Example old starts with 2...... where a new may start with 0_2..... The below scripts corects it to conform with the initial IDs
+
+```{r}
+#!/usr/bin/env Rscript
+
+############################################################
+# restore_fam_metadata.R
+# ----------------------
+# For your dataset:
+#   - Original FAM: H3_Africa_order_3220_original_annotation.fam
+#   - New FAM     : H3_GRCh37_refAligned.fam
+#
+# Does:
+#   1) Copies SEX and PHENO from original to new *by row position*
+#   2) Strips leading "0_" from FID and IID (0_2503... -> 2503...)
+#   3) Backs up new FAM → H3_GRCh37_refAligned.fam.bak
+#   4) Overwrites H3_GRCh37_refAligned.fam with corrected values
+############################################################
+
+suppressPackageStartupMessages({
+  library(data.table)
+})
+
+orig_fam_path <- "H3_Africa_order_3220_original_annotation.fam"
+new_fam_path  <- "H3_GRCh37_refAligned.fam"
+
+cat("Original FAM:", orig_fam_path, "\n")
+cat("New FAM     :", new_fam_path, "\n\n")
+
+if (!file.exists(orig_fam_path)) stop("Original FAM not found: ", orig_fam_path)
+if (!file.exists(new_fam_path))  stop("New FAM not found: ", new_fam_path)
+
+# Read both FAMs as character
+orig <- fread(
+  orig_fam_path,
+  header     = FALSE,
+  colClasses = rep("character", 6),
+  col.names  = c("FID", "IID", "PAT", "MAT", "SEX", "PHENO")
+)
+
+new <- fread(
+  new_fam_path,
+  header     = FALSE,
+  colClasses = rep("character", 6),
+  col.names  = c("FID", "IID", "PAT", "MAT", "SEX", "PHENO")
+)
+
+cat("Original FAM samples:", nrow(orig), "\n")
+cat("New FAM samples     :", nrow(new), "\n\n")
+
+if (nrow(orig) != nrow(new)) {
+  stop("Number of samples differ between original and new FAM - cannot copy by position.")
+}
+
+# 1) Copy SEX and PHENO by row position
+new$SEX   <- orig$SEX
+new$PHENO <- orig$PHENO
+
+# 2) Strip leading "0_" from FID and IID, if present
+new$FID <- sub("^0_", "", new$FID)
+new$IID <- sub("^0_", "", new$IID)
+
+cat("Example rows after copying + ID fix:\n")
+print(new[1:5, ])
+
+# Backup old FAM
+backup_path <- paste0(new_fam_path, ".bak")
+file.copy(new_fam_path, backup_path, overwrite = TRUE)
+cat("\nBackup written to:", backup_path, "\n")
+
+# Overwrite the new FAM with corrected metadata
+fwrite(
+  new,
+  file      = new_fam_path,
+  sep       = " ",
+  col.names = FALSE,
+  quote     = FALSE
+)
+
+cat("✅ Corrected FAM written to:", new_fam_path, "\n")
+cat("   - SEX and PHENO copied from original (by row)\n")
+cat("   - FID/IID cleaned (removed '0_' prefix)\n")
+```
+
+-   FID / IID = `2503…` (no `0_`)
+
+-   SEX = 1/2 (male/female)
+
+-   PHENO = 1/2 (control/case)
+
+Once that looks good:
+
+Record all the steps into the qc_tracker.csv
+
+```{bash}
+plink --bfile H3_GRCh37_refAligned \
+      --missing \
+      --out H3_GRCh37_refAligned
+
+Rscript qc_tracker.R H3_GRCh37_refAligned \
+    "Post-strand alignment + restored sex/phenotype + fixed IDs"
+```
+
+Great, now we have our perfectly aligned files. We can move on to Quality Control steps.
+
+# 3. Quality Control Steps
+
+## Sample Level Quality Control
+
+First run a baseline snapshot of your data beofre QC. And log into your qc_tracker
+
+```{bash}
+plink --bfile H3_GRCh37_refAligned \
+      --missing \
+      --out H3_GRCh37_refAligned
+
+Rscript qc_tracker.R H3_GRCh37_refAligned \
+    "Baseline: post-strand alignment + fixed IDs/phenotypes"
+```
+
+## SNP missingness (first `–geno 0.05`)
+
+Remove SNPs missing in \>5% of samples
+
+```{bash}
+plink --bfile H3_GRCh37_refAligned \
+      --geno 0.05 \
+      --make-bed \
+      --out H3_QC1_geno0.05
+
+plink --bfile H3_QC1_geno0.05 \
+      --missing \
+      --out H3_QC1_geno0.05
+
+Rscript qc_tracker.R H3_QC1_geno0.05 \
+    "Step 1: SNP call-rate filter (--geno 0.05)" \
+    QC_progress_tracker.csv \
+    --snp-miss 0.05
+```
+
+## Sample missingness (`--mind 0.05`)
+
+Remove individuals with \>5% missing genotypes.
+
+```{bash}
+plink --bfile H3_QC1_geno0.05 \
+      --mind 0.05 \
+      --make-bed \
+      --out H3_QC2_mind0.05
+
+plink --bfile H3_QC2_mind0.05 \
+      --missing \
+      --out H3_QC2_mind0.05
+
+Rscript qc_tracker.R H3_QC2_mind0.05 \
+    "Step 2: Sample call-rate filter (--mind 0.05)" \
+    QC_progress_tracker.csv \
+    --sample-miss 0.05
+```
+
+## SNP missingness again (second `--geno 0.05`)
+
+Now that bad individuals are gone, SNP missingness is recalculated; some SNPs will newly cross 5% missing and should be dropped.
+
+```{bash}
+plink --bfile H3_QC2_mind0.05 \
+      --geno 0.05 \
+      --make-bed \
+      --out H3_QC3_geno0.05_again
+
+plink --bfile H3_QC3_geno0.05_again \
+      --missing \
+      --out H3_QC3_geno0.05_again
+
+Rscript qc_tracker.R H3_QC3_geno0.05_again \
+    "Step 3: SNP call-rate filter again (--geno 0.05) after sample cleanup" \
+    QC_progress_tracker.csv \
+    --snp-miss 0.05
+```
+
+## MAF filter (`--maf 0.01`)
+
+Keep variants with minor allele frequency ≥1%.
+
+```{bash}
+plink --bfile H3_QC3_geno0.05_again \
+      --maf 0.01 \
+      --make-bed \
+      --out H3_QC4_maf0.01
+
+plink --bfile H3_QC4_maf0.01 \
+      --missing \
+      --out H3_QC4_maf0.01
+
+Rscript qc_tracker.R H3_QC4_maf0.01 \
+    "Step 4: MAF filter (--maf 0.01)" \
+    QC_progress_tracker.csv \
+    --maf 0.01
+```
+
+## HWE filter (`--hwe 1e-6 midp` in controls)
+
+Only done in controls
+
+```{bash}
+plink --bfile H3_QC4_maf0.01 \
+      --hwe 1e-6 midp \
+      --make-bed \
+      --out H3_QC5_hwe1e-6
+
+plink --
+bfile H3_QC5_hwe1e-6 \
+      --missing \
+      --out H3_QC5_hwe1e-6
+
+Rscript qc_tracker.R H3_QC5_hwe1e-6 \
+    "Step 5: HWE filter in controls (--hwe 1e-6 midp)" \
+    QC_progress_tracker.csv \
+    --hwe 1e-6 \
+    --other "HWE midp; applied to controls only"
+```
+
+## Autosomes only (chr 1–22)
+
+For PCA, imputation, GWAS keep only autosomes.
+
+```{bash}
+plink --bfile H3_QC5_hwe1e-6 \
+      --chr 1-22 \
+      --make-bed \
+      --out H3_QC6_autosomes
+
+plink --bfile H3_QC6_autosomes \
+      --missing \
+      --out H3_QC6_autosomes
+
+Rscript qc_tracker.R H3_QC6_autosomes \
+    "Step 6: Restricted to autosomes (chr 1–22)" \
+    QC_progress_tracker.csv \
+    --other "chr 1–22 only"
+```
+
+## **Relatedness (IBD) and removal**
+
+```{bash}
+plink --bfile H3_QC6_autosomes \
+      --het \
+      --out H3_QC7_het
+```
+
+### Identify outliers in R (\|F z-score\| \> 3)
+
+Create a small R script, e.g. `find_het_outliers.R`:
+
+```{r}
+#!/usr/bin/env Rscript
+
+suppressPackageStartupMessages({
+  library(data.table)
+})
+
+het <- fread("H3_QC7_het.het")
+
+# F = inbreeding coefficient; use z-score on F
+het[, mean_F := mean(F, na.rm = TRUE)]
+het[, sd_F   := sd(F, na.rm = TRUE)]
+het[, z_F    := (F - mean_F) / sd_F]
+
+outliers <- het[abs(z_F) > 3, .(FID, IID, F, z_F)]
+
+cat("Total samples:", nrow(het), "\n")
+cat("Heterozygosity outliers (|z_F| > 3):", nrow(outliers), "\n")
+
+if (nrow(outliers) > 0) {
+  fwrite(outliers[, .(FID, IID)],
+         file = "het_fail_remove.txt",
+         sep = "\t",
+         col.names = FALSE)
+  cat("Wrote outliers to het_fail_remove.txt\n")
+} else {
+  cat("No heterozygosity outliers detected. No file written.\n")
+}
+```
+
+### Remove outliers (if any) and track
+
+If `het_fail_remove.txt` **exists and is non-empty**:
+
+```{bash}
+plink --bfile H3_QC6_autosomes \
+      --remove het_fail_remove.txt \
+      --make-bed \
+      --out H3_QC7_hetClean
+
+plink --bfile H3_QC7_hetClean \
+      --missing \
+      --out H3_QC7_hetClean
+
+Rscript qc_tracker.R H3_QC7_hetClean \
+    "Step 7: Removed heterozygosity outliers (|F z| > 3)" \
+    QC_progress_tracker.csv \
+    --other "Removed samples with |F z-score| > 3"
+```
+
+## Relatedness (IBD) and removal of relatives
+
+### Compute IBD
+
+```{bash}
+plink --bfile H3_QC7_hetClean \
+      --genome \
+      --min 0.185 \
+      --out H3_QC8_ibd
+```
+
+This makes `H3_QC8_ibd.genome` with pairwise IBD estimates.
+
+### Select one to remove per related pair in R
+
+R script `find_ibd_related.R`:
+
+```{r}
+#!/usr/bin/env Rscript
+
+suppressPackageStartupMessages({
+  library(data.table)
+})
+
+ibd <- fread("H3_QC8_ibd.genome")
+
+# PI_HAT > 0.185 ~ 2nd-degree or closer
+pairs <- ibd[PI_HAT > 0.185]
+
+cat("Total pairs with PI_HAT > 0.185:", nrow(pairs), "\n")
+
+if (nrow(pairs) == 0) {
+  cat("No related pairs found. No file written.\n")
+  quit(save = "no")
+}
+
+# Simple heuristic: remove the second individual in each pair
+to_remove <- unique(pairs[, .(FID = FID2, IID = IID2)])
+
+cat("Individuals to remove:", nrow(to_remove), "\n")
+
+fwrite(to_remove,
+       file = "ibd_fail_remove.txt",
+       sep = "\t",
+       col.names = FALSE)
+
+cat("Wrote related individuals to ibd_fail_remove.txt\n")
+```
+
+Input a final track into `QC_progress_tracker.csv`
+
+```{bash}
+Rscript qc_tracker.R H3_QC8_ibdClean \
+    "Step 9: Final QC-clean dataset (pre-imputation / pre-GWAS)" \
+    QC_progress_tracker.csv \
+    --snp-miss 0.05 --sample-miss 0.05 --maf 0.01 --hwe 1e-6 \
+    --other "Autosomes only; post heterozygosity and IBD filters"
+```
+
+# 4. Population Structure Determination (PCA & Admixture)
+
+## Setup
+
+We create indivdual directories for PCA and Admixture to keep things clean.
+
+From the directory with `H3_QC8_ibdClean.*`:
+
+```{bash}
+mkdir -p PCA ADMIXTURE
+```
+
+Note: If you have a differenet name for your post QC files. Replace H3_QC8_ibdClean with your file name for the following steps.
+
+## PCA PIPELINE (into `PCA/`)
+
+### LD pruning for PCA
+
+```{bash}
+plink --bfile H3_QC8_ibdClean \
+      --indep-pairwise 50 5 0.2 \
+      --out PCA/H3_QC8_prune
+
+plink --bfile H3_QC8_ibdClean \
+      --extract PCA/H3_QC8_prune.prune.in \
+      --make-bed \
+      --out PCA/H3_QC8_pruned
+```
+
+### Run PCA with PLINK
+
+```{bash}
+plink --bfile PCA/H3_QC8_pruned \
+      --pca 20 \
+      --out PCA/H3_PCA
+```
+
+Don't forget to login the changes into the qc_tracker
+
+```{bash}
+Rscript qc_tracker.R PCA/H3_QC8_pruned \
+    "Step 11: PCA computed on LD-pruned SNPs" \
+    QC_progress_tracker.csv \
+    --other "PCA: 20 components; PLINK exact PCA; LD pruning: 50 5 0.2; PCA output prefix: PCA/H3_PCA"
+```
+
+Now make sure you have your phenotype data in .txt or .tsv format. It can contain things like ethnicity, age, strain_type etc.
+
+For this we used a phenotype data called H3_pheno.phe.txt which contained the above parameters. We will then merge with phenotype data and plot the PCA in R as below.
+
+```{r}
+#!/usr/bin/env Rscript
+
+suppressPackageStartupMessages({
+  library(data.table)
+  library(dplyr)
+  library(ggplot2)
+  library(cowplot)  # for combining A/B panels
+})
+
+# -------------------------------------------------------
+# 1) Read PCA eigenvectors
+# -------------------------------------------------------
+eig <- fread("PCA/H3_PCA.eigenvec")
+# PLINK format: FID IID PC1 PC2 PC3 ...
+colnames(eig) <- c("FID", "IID", paste0("PC", 1:(ncol(eig) - 2)))
+
+cat("Read PCA eigenvec with", nrow(eig), "samples and",
+    ncol(eig) - 2, "PCs.\n")
+
+# -------------------------------------------------------
+# 2) Read eigenvalues and compute variance explained
+# -------------------------------------------------------
+eigenval <- fread("PCA/H3_PCA.eigenval", header = FALSE)$V1
+variance_explained <- eigenval / sum(eigenval)
+
+pc1_var <- round(variance_explained[1] * 100, 2)
+pc2_var <- round(variance_explained[2] * 100, 2)
+
+pc1_lab <- paste0("PC1 (", pc1_var, "% variance)")
+pc2_lab <- paste0("PC2 (", pc2_var, "% variance)")
+
+cat("PC1 variance:", pc1_var, "%\n")
+cat("PC2 variance:", pc2_var, "%\n")
+
+# -------------------------------------------------------
+# 3) Read phenotype file
+#    H3_pheno.phe.txt with columns:
+#    FID IID AGE REGION ETHNICITY STRAIN
+# -------------------------------------------------------
+pheno <- fread("PCA/H3_pheno.phe.txt")
+
+cat("Read phenotype file with", nrow(pheno), "rows.\n")
+cat("Phenotype columns:\n")
+print(colnames(pheno))
+
+# -------------------------------------------------------
+# 4) Merge PCA + phenotype
+# -------------------------------------------------------
+dat <- eig %>%
+  left_join(pheno, by = c("FID", "IID"))
+
+cat("Merged PCA + pheno; rows:", nrow(dat), "\n\n")
+
+# -------------------------------------------------------
+# 5) Recode ETHNICITY: Akan, Ewe, Ga, others -> "Other"
+# -------------------------------------------------------
+dat <- dat %>%
+  mutate(
+    ETHNICITY_CLEAN = case_when(
+      !is.na(ETHNICITY) & tolower(ETHNICITY) == "akan" ~ "Akan",
+      !is.na(ETHNICITY) & tolower(ETHNICITY) == "ewe"  ~ "Ewe",
+      !is.na(ETHNICITY) & tolower(ETHNICITY) == "ga"   ~ "Ga",
+      is.na(ETHNICITY) ~ NA_character_,
+      TRUE ~ "Other"
+    ),
+    ETHNICITY_CLEAN = factor(
+      ETHNICITY_CLEAN,
+      levels = c("Akan", "Ewe", "Ga", "Other")
+    )
+  )
+
+# -------------------------------------------------------
+# 6) Recode STRAIN: Control, MAF, Mtbss
+# -------------------------------------------------------
+dat <- dat %>%
+  mutate(
+    STRAIN_CLEAN = case_when(
+      !is.na(STRAIN) & grepl("^control$", STRAIN, ignore.case = TRUE) ~ "Control",
+      !is.na(STRAIN) & grepl("maf", STRAIN, ignore.case = TRUE)       ~ "MAF",
+      !is.na(STRAIN) & grepl("mtb", STRAIN, ignore.case = TRUE)       ~ "Mtbss",
+      TRUE ~ STRAIN
+    ),
+    STRAIN_CLEAN = factor(
+      STRAIN_CLEAN,
+      levels = c("Control", "MAF", "Mtbss")
+    )
+  )
+
+# -------------------------------------------------------
+# 7) PCA plot A: ETHNICITY
+# -------------------------------------------------------
+p_eth <- dat %>%
+  filter(!is.na(ETHNICITY_CLEAN)) %>%
+  ggplot(aes(x = PC1, y = PC2, color = ETHNICITY_CLEAN)) +
+  geom_point(alpha = 0.9, size = 1) +
+  labs(
+    title = "PCA coloured by Ethnicity",
+    x = pc1_lab,
+    y = pc2_lab,
+    color = "Ethnicity"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_line(size = 0.2),
+    legend.position = "right"
+  )
+
+ggsave("PCA/H3_PCA_PC1_PC2_ETHNICITY.png",
+       p_eth, width = 7, height = 5, dpi = 300)
+
+cat("Saved PCA ethnicity plot to PCA/H3_PCA_PC1_PC2_ETHNICITY.png\n")
+
+# -------------------------------------------------------
+# 8) PCA plot B: STRAIN
+# -------------------------------------------------------
+p_strain <- dat %>%
+  filter(!is.na(STRAIN_CLEAN)) %>%
+  ggplot(aes(x = PC1, y = PC2, color = STRAIN_CLEAN)) +
+  geom_point(alpha = 0.9, size = 1) +
+  labs(
+    title = "PCA coloured by Strain",
+    x = pc1_lab,
+    y = pc2_lab,
+    color = "Strain"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid = element_line(size = 0.2),
+    legend.position = "center"
+  )
+
+ggsave("PCA/H3_PCA_PC1_PC2_STRAIN.png",
+       p_strain, width = 7, height = 5, dpi = 300)
+
+cat("Saved PCA strain plot to PCA/H3_PCA_PC1_PC2_STRAIN.png\n")
+
+# -------------------------------------------------------
+# 9) Combined panel (A = ethnicity, B = strain)
+# -------------------------------------------------------
+combined <- plot_grid(
+  p_eth, p_strain,
+  ncol = 1,
+  labels = c("A", "B"),
+  label_size = 14,
+  label_fontface = "bold",
+  rel_heights = c(1, 1)
+)
+
+ggsave("PCA/H3_PCA_PC1_PC2_ETHNICITY_STRAIN_combined.png",
+       combined, width = 7, height = 9, dpi = 300)
+
+cat("Saved combined PCA panel to PCA/H3_PCA_PC1_PC2_ETHNICITY_STRAIN_combined.png\n")
+```
+
+### Merging our DATA with that of the 1000 Genomes Project
+
+```{bash}
+plink --bfile H3_QC8_ibdClean \
+      --bmerge PCA/1000G_merged.bed PCA/1000G_merged.bim PCA/1000G_merged.fam \
+      --make-bed \
+      --out PCA/Ghana_1000G_tmp
+```
+
+You can get low genotyping rate as many of the SNPs found in the 1000 genomes project may not be found in our dataset
+
+Restrict to **autosomes** and **geno 0.05** to effectively keep SNPs shared and well-called in both cohorts.
+
+```{bash}
+plink --bfile PCA/Ghana_1000G_tmp \
+      --chr 1-22 \
+      --geno 0.05 \
+      --make-bed \
+      --out PCA/Ghana_1000G_geno0.05_autosomes
+```
+
+An error occurs where all samples are removed bt produces a file
+
+After map the chromosome positions in each file better
+
+```{bash}
+plink --bfile H3_QC8_ibdClean_posID \ 
+      --bmerge PCA/1000G_merged_posID.bed PCA/1000G_merged_posID.bim PCA/1000G_merged_posID.fam \ 
+      --make-bed \ 
+      --out PCA/Ghana_1000G_posID_tmp
+```
+
+Remove multiallelic variants
+
+```{bash}
+plink --bfile PCA/1000G_merged_posID
+      --exclude PCA/Ghana_1000G_posID_tmp-merge.missnp
+      --make-bed
+      --out PCA/1000G_merged_posID_nomulti
+```
+
+```{bash}
+plink --bfile H3_QC8_ibdClean_posID_nomulti
+      --bmerge PCA/1000G_merged_posID_nomulti.bed PCA/1000G_merged_posID_nomulti.bim PCA/1000G_merged_posID_nomulti.fam
+      --make-bed
+       --out PCA/Ghana_1000G_posID_merged
+```
+
+Prune data before PCA
+
+```{bash}
+plink --bfile PCA/Ghana_1000G_posID_merged
+      --indep-pairwise 50 5 0.2
+      --out PCA/Ghana_1000G_prune
+```
+
+Extract pruned data to make bed, bim and fam files
+
+```{bash}
+plink --bfile PCA/Ghana_1000G_posID_merged
+      --extract PCA/Ghana_1000G_prune.prune.in
+      --make-bed
+      --out PCA/Ghana_1000G_pruned
+```
+
+Run PCA on pruned data
+
+```{bash}
+plink --bfile PCA/Ghana_1000G_pruned
+      --out PCA/Ghana_1000G_PCA
+      --pca 20
+```
+
+R script to plot merged 1000 genomes and Personal data
+
+```{r}
+#!/usr/bin/env Rscript
+
+suppressPackageStartupMessages({
+  library(data.table)
+  library(dplyr)
+  library(ggplot2)
+})
+
+# -------------------------------------------------------
+# 1) Read PCA eigenvectors & eigenvalues
+# -------------------------------------------------------
+eig <- fread("PCA/Ghana_1000G_PCA.eigenvec")
+colnames(eig) <- c("FID", "IID", paste0("PC", 1:(ncol(eig) - 2)))
+
+# Ensure IDs are character
+eig <- eig %>%
+  mutate(
+    FID = as.character(FID),
+    IID = as.character(IID)
+  )
+
+cat("Read merged PCA eigenvec with", nrow(eig), "samples and",
+    ncol(eig) - 2, "PCs.\n")
+
+eigenval <- fread("PCA/Ghana_1000G_PCA.eigenval", header = FALSE)$V1
+variance_explained <- eigenval / sum(eigenval)
+
+pc1_var <- round(variance_explained[1] * 100, 2)
+pc2_var <- round(variance_explained[2] * 100, 2)
+
+pc1_lab <- paste0("PC1 (", pc1_var, "% variance)")
+pc2_lab <- paste0("PC2 (", pc2_var, "% variance)")
+
+cat("PC1 variance:", pc1_var, "%\n")
+cat("PC2 variance:", pc2_var, "%\n")
+
+# -------------------------------------------------------
+# 2) Ghana phenotype file (marks Ghana samples)
+#    H3_pheno.phe.txt: FID IID AGE REGION ETHNICITY STRAIN
+# -------------------------------------------------------
+ghana_pheno <- fread("PCA/H3_pheno.phe.txt")
+
+ghana_pheno <- ghana_pheno %>%
+  mutate(
+    FID = as.character(FID),
+    IID = as.character(IID)
+  )
+
+ghana_ids <- ghana_pheno %>%
+  select(FID, IID) %>%
+  mutate(GROUP_GHANA = "Ghana")
+
+cat("Ghana samples in pheno:", nrow(ghana_ids), "\n")
+
+# -------------------------------------------------------
+# 3) 1000 Genomes datasheet
+#    Columns: sample, pop, super_pop, gender
+# -------------------------------------------------------
+kg <- fread("PCA/1000_Genomes_Datasheet.txt")
+
+cat("1000 Genomes datasheet rows:", nrow(kg), "\n")
+cat("Datasheet columns:\n")
+print(colnames(kg))
+
+# Build IID + subpopulation annotation (as character)
+kg_annot <- kg %>%
+  transmute(
+    IID       = as.character(sample),
+    KG_SUBPOP = super_pop
+  )
+
+# -------------------------------------------------------
+# 4) Merge PCA with Ghana + 1000G annotations
+# -------------------------------------------------------
+dat <- eig %>%
+  # mark Ghana samples (FID+IID)
+  left_join(ghana_ids, by = c("FID", "IID")) %>%
+  # add 1000G subpop by IID
+  left_join(kg_annot, by = "IID") %>%
+  mutate(
+    GROUP = case_when(
+      !is.na(GROUP_GHANA) ~ "Ghana",
+      !is.na(KG_SUBPOP)   ~ KG_SUBPOP,
+      TRUE                ~ "Unknown"
+    )
+  )
+
+cat("Merged PCA + annotations; rows:", nrow(dat), "\n")
+cat("Group counts:\n")
+print(table(dat$GROUP))
+
+# -------------------------------------------------------
+# 5) PCA plot: Ghana + 1000G subpopulations
+# -------------------------------------------------------
+p <- dat %>%
+  filter(GROUP != "Unknown") %>%
+  ggplot(aes(x = PC1, y = PC2, color = GROUP)) +
+  geom_point(alpha = 0.9, size = 1.0) +
+  labs(
+    title = "PCA: Ghana + 1000 Genomes subpopulations",
+    x = pc1_lab,
+    y = pc2_lab,
+    color = "Group"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    panel.grid = element_line(size = 0.2),
+    legend.position = "right"
+  )
+
+# Make sure output dir exists (PCA/)
+if (!dir.exists("PCA")) dir.create("PCA", recursive = TRUE)
+
+ggsave("PCA/PCA_1000G_merge/Ghana_1000G_PCA_PC1_PC2_GROUP.png",
+       p, width = 8, height = 6, dpi = 300)
+
+cat("Saved PCA plot to PCA/PCA_1000G_merge/Ghana_1000G_PCA_PC1_PC2_GROUP.png\n")
+```
+
+Log in all your PCA steps into `QC_progress_tracker.csv`
+
+```{bash}
+# 1) Ghana posID after removing multiallelic variants
+plink --bfile H3_QC8_ibdClean_posID_nomulti \
+      --missing \
+      --out H3_QC8_ibdClean_posID_nomulti
+
+# 2) 1000G posID after removing multiallelic variants
+plink --bfile PCA/1000G_merged_posID_nomulti \
+      --missing \
+      --out PCA/1000G_merged_posID_nomulti
+
+# 3) Final merged Ghana+1000G dataset
+plink --bfile PCA/Ghana_1000G_posID_merged \
+      --missing \
+      --out PCA/Ghana_1000G_posID_merged
+
+# 4) LD-pruned final dataset (used for PCA/ADMIXTURE)
+plink --bfile PCA/Ghana_1000G_pruned \
+      --missing \
+      --out PCA/Ghana_1000G_pruned
+```
+
+#### Log: removal of problematic SNPs (Ghana side)
+
+**Dataset:** `H3_QC8_ibdClean_posID_nomulti`
+
+```{bash}
+Rscript qc_tracker.R H3_QC8_ibdClean_posID_nomulti \
+  "Step 12: Ghana posID dataset after removing multiallelic / discordant SNPs for merge" \
+  QC_progress_tracker.csv \
+  --other "Started from H3_QC8_ibdClean_posID; excluded SNPs in PCA/Ghana_1000G_posID_tmp-merge.missnp"
+```
+
+#### Log: removal of problematic SNPs (1000G side)
+
+**Dataset:** `PCA/1000G_merged_posID_nomulti`
+
+```{bash}
+Rscript qc_tracker.R PCA/1000G_merged_posID_nomulti \
+  "Step 13: 1000 Genomes posID dataset after removing multiallelic / discordant SNPs for merge" \
+  QC_progress_tracker.csv \
+  --other "Started from PCA/1000G_merged_posID; excluded SNPs in PCA/Ghana_1000G_posID_tmp-merge.missnp"
+```
+
+#### Log: final merged Ghana + 1000G dataset (before pruning)
+
+**Dataset:** `PCA/Ghana_1000G_posID_merged`
+
+This is the key PCA base dataset.
+
+```{bash}
+Rscript qc_tracker.R PCA/Ghana_1000G_posID_merged \
+  "Step 14: Final merged Ghana + 1000G dataset (posID, GRCh37)" \
+  QC_progress_tracker.csv \
+  --other "Successfully merged H3_QC8_ibdClean_posID_nomulti with 1000G_merged_posID_nomulti; includes Ghana + 2504 1000G samples"
+```
+
+#### Log: LD-pruned set used for PCA & ADMIXTURE
+
+**Dataset:** `PCA/Ghana_1000G_pruned`
+
+```{bash}
+Rscript qc_tracker.R PCA/Ghana_1000G_pruned \
+  "Step 15: LD-pruned Ghana + 1000G dataset for PCA/ADMIXTURE" \
+  QC_progress_tracker.csv \
+  --other "indep-pairwise 50 5 0.2 on PCA/Ghana_1000G_posID_merged; this SNP set used for PCA and ADMIXTURE"
+```
+
+#### Log: PCA step itself (on pruned dataset)
+
+PCA doesn’t change SNPs/samples, but we want the parameters in the log. We point qc_tracker again to the **pruned PLINK prefix** and just change the description + `--other`.
+
+```{bash}
+Rscript qc_tracker.R PCA/Ghana_1000G_pruned \
+  "Step 16: PCA on Ghana + 1000G LD-pruned dataset" \
+  QC_progress_tracker.csv \
+  --other "PCA: 20 components from PCA/Ghana_1000G_pruned; outputs=Ghana_1000G_PCA.eigenvec/eigenval; variance PC1≈$57.67%, PC2≈$19.9%, PC3≈$6.09%"
+```
+
+#### (Optional but nice) Log: Ghana-only PCA with ethnicity
+
+Even though this uses the **same eigenvec file**, it’s conceptually another analysis step: “PCA interpreted within Ghana; coloured by ETHNICITY”. If you want that documented:
+
+```{bash}
+Rscript qc_tracker.R PCA/Ghana_1000G_pruned \
+  "Step 17: Ghana-only PCA interpretation with ethnicity (Akan/Ewe/Ga/Other)" \
+  QC_progress_tracker.csv \
+  --other "Used Ghana subset of Ghana_1000G_PCA eigenvectors; ETHNICITY from H3_pheno.phe.txt; produced ethnicity-stratified PCA plots"
+```
+
+## ADMIXTURE Analysis
+
+You can run the admixture on the merged H3_Africa and 1000 Genomes sample `Ghana_1000G_pruned.bed`
+
+```{bash}
+for K in {2..10}; do
+  echo ">>> Running ADMIXTURE for K=${K}"
+  admixture --cv=10 Ghana_1000G_pruned.bed $K | tee admixture_K${K}.log
+done
+```
+
+You can also run admixture on just your pruned SNPs without 1000 genomes merge:
+
+```{bash}
+for K in {2..10}; do
+  echo ">>> Running ADMIXTURE for K=${K}"
+  admixture --cv=10 Ghana_1000G_pruned.bed $K | tee admixture_K${K}.log
+done
+```
+
+# 5. Preparation for Imputation
+
+## Liftover GRCh37 → GRCh38 using CrossMap
+
+Use your **clean, pre-pruned GRCh37 dataset:** `H3_QC8_ibdClean.{bed,bim,fam}`
+
+Create new a directory and copy `H3_QC8_ibdClean.{bed,bim,fam}` into this directory. Start working from the directory containing these files.
+
+```{bash}
+mkdir -p Liftover_GRCh38
+cd Liftover_GRCh38
+
+cd ..
+cp H3_QC8_ibdClean.b* Liftover_GRCh38/
+cp H3_QC8_ibdClean.fam Liftover_GRCh38/
+
+cd Liftover_GRCh38
+```
+
+Now we have `H3_QC8_ibdClean.{bed,bim,fam}` in the Liftover_GRCh38 directory
+
+## Convert PLINK (GRCh37) → VCF
+
+Use PLINK to export a VCF with your current genotypes and index it:
+
+```{bash}
+plink --bfile H3_QC8_ibdClean \
+      --recode vcf bgz \
+      --out H3_QC8_ibdClean_GRCh37
+      
+tabix -p vcf H3_QC8_ibdClean_GRCh37.vcf.gz
+```
+
+It produces two files `H3_QC8_ibdClean.GRCh37.vcf.gz` and `H3_QC8_ibdClean_GRCh37.vcf.gz.tbi`
+
+Create a conda environment for crossmap. This is used for ...
+
+```{bash}
+conda create -n crossmap_env -c bioconda -c conda-forge python=3.10 crossmap
+
+conda activate crossmap_env
+```
+
+### Downloading the GRCh38 reference genome from Ensemble
+
+```{bash}
+mkdir -p /home/tafum/references/GRCh38
+cd /home/tafum/references/GRCh38
+```
+
+```{bash}
+# Ensembl-style primary assembly (example URL pattern)
+wget ftp://ftp.ensembl.org/pub/release-110/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+
+# Decompress
+gunzip Homo_sapiens.GRCh38.dna.primary_assembly.fa.gz
+
+# Optional: rename to something simple
+mv Homo_sapiens.GRCh38.dna.primary_assembly.fa GRCh38.fa
+
+# Index for samtools / bcftools / CrossMap / Picard
+samtools faidx GRCh38.fa
+```
+
+Download chainfile needed for liftover
+
+```{bash}
+wget http://hgdownload.soe.ucsc.edu/goldenPath/hg19/liftOver/hg19ToHg38.over.chain.gz
+```
+
+Liftover Step\
+When running from Initial directory `H3_Imputation.`
+
+You can cp the files (`GRCh38, hg19TOHg38.over.chain.gz`) from the `reference` directory (after download) into your working `Liftover_GRCh38` directory.
+
+```{bash}
+cp /home/tafum/reference/GRCh38 /home/tafum/H3_Imputation/Lifover_GRCh38
+cp /home/tafum/reference/hg19TOHg38.over.chain.gz /home/tafum/H3_Imputation/Liftover_GRCh38
+```
+
+#You should run this from `~/H3_imputation/Liftover_GRCh38`:
+
+```{bash}
+conda activate crossmap_env
+
+CrossMap vcf \
+  hg19ToHg38.over.chain.gz \
+  H3_QC8_ibdClean_GRCh37.vcf.gz \
+  GRCh38/GRCh38.fa \
+  H3_QC8_ibdClean_GRCh38_lifted.vcf
+
+```
+
+```{bash}
+# Sort by chrom+pos and write compressed VCF
+bcftools sort \
+  -Oz \
+  -o H3_QC8_ibdClean_GRCh38_lifted.sorted.vcf.gz \
+  H3_QC8_ibdClean_GRCh38_lifted.vcf
+  
+# Index the sorted VCF
+tabix -p vcf H3_QC8_ibdClean_GRCh38_lifted.sorted.vcf.gz
+```
+
+### Convert sorted GRCh38 VCF → PLINK
+
+```{bash}
+plink --vcf H3_QC8_ibdClean_GRCh38_lifted.sorted.vcf.gz \
+      --double-id \
+      --make-bed \
+      --out H3_QC8_ibdClean_GRCh38_tmp
+```
+
+### Restore original FAM and finalize GRCh38 dataset
+
+```{bash}
+cp H3_QC8_ibdClean.fam H3_QC8_ibdClean_GRCh38_tmp.fam
+
+mv H3_QC8_ibdClean_GRCh38_tmp.bed H3_QC8_ibdClean_GRCh38.bed
+mv H3_QC8_ibdClean_GRCh38_tmp.bim H3_QC8_ibdClean_GRCh38.bim
+mv H3_QC8_ibdClean_GRCh38_tmp.fam H3_QC8_ibdClean_GRCh38.fam
+```
+
+#### Append QC to tracker
+
+Run this from: `~/H3_imputation`
+
+```{bash}
+cd ~/H3_imputation
+
+plink --bfile Liftover_GRCh38/H3_QC8_ibdClean_GRCh38 \
+      --missing \
+      --out Liftover_GRCh38/H3_QC8_ibdClean_GRCh38
+      
+Rscript qc_tracker.R Liftover_GRCh38/H3_QC8_ibdClean_GRCh38 \
+  "Step 18: Liftover from GRCh37 to GRCh38 for imputation" \
+  QC_progress_tracker.csv \
+  --other "Started from H3_QC8_ibdClean (GRCh37); CrossMap vcf with hg19ToHg38.over.chain.gz and GRCh38.fa; 1,845,728 input variants, 885 failed to map; final PLINK dataset: H3_QC8_ibdClean_GRCh38.{bed,bim,fam}"
+
+```
+
+### Split GRCh38 dataset by chromosome
+
+Move to your working directory:
+
+```{bash}
+cd ~ H3_Imputation/Liftover_GRCh38
+```
+
+#### Convert each chromosome to sorted VCF
+
+Run this loop
+
+```{bash}
+for CHR in {1..22}; do
+    plink --bfile chr${CHR}_GRCh38 \
+          --recode vcf \
+          --out chr${CHR}.raw
+
+    # compress & sort & index
+    bcftools sort -Oz -o chr${CHR}.vcf.gz chr${CHR}.raw.vcf
+    tabix -p vcf chr${CHR}.vcf.gz
+
+    # clean
+    rm chr${CHR}.raw.vcf
+done
+```
+
+#### Prepare imputation folder structure
+
+```{bash}
+mkdir -p ~/H3_imputation/imputation_input
+mv chr*.vcf.gz* ~/H3_imputation/imputation_input/
+```
+
+Append to QC_tracker.csv (Do this from `~H3_Imputation`)
+
+```{bash}
+Rscript qc_tracker.R Liftover_GRCh38/H3_QC8_ibdClean_GRCh38   "Step 19: Prepared GRCh38 per-chromosome imputation dataset"   QC_progress_tracker.csv   --other "Split into chr1-22; converted to VCF; sorted bgzipped; indexed; ready for H3ABioNet chipimputation."
+```
+
+### Run H3ABioNet imputation
+
+Make sure Nextflow and Singularity are on the HPC being used. If not you can create the environment using the following. Run:
+
+```{bash}
+cd ~
+mkdir -p ~/bin
+cd ~/bin
+
+wget -qO nextflow https://github.com/nextflow-io/nextflow/releases/download/v24.04.3/nextflow
+chmod +x nextflow
+```
+
+Now add `~/bin` to your PATH.
+
+Edit your `.bashrc`:
+
+```{bash}
+echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Check installation
+
+```{bash}
+nextflow -v
+```
+
+You should see something like this: `nextflow version 24.04.3`
+
+Liftover New Steps
+
+Sort out lifover VCF
+
+```{bash}
+# If it's already gzipped and indexed partially, ignore the old index
+# and just sort the VCF:
+
+bcftools sort \
+  -Oz -o H3_QC8_ibdClean_GRCh38_lifted_sorted.vcf.gz \
+  H3_QC8_ibdClean_GRCh38_lifted.vcf.gz
+
+tabix -p vcf H3_QC8_ibdClean_GRCh38_lifted_sorted.vcf.gz
+```
+
+#### Remove ambiguous SNPs
+
+```{bash}
+bcftools view -e '(REF="A" && ALT="T") || (REF="T" && ALT="A") || (REF="C" && ALT="G") || (REF="G" && ALT="C")' \
+  -Oz -o H3_QC8_GRCh38_noAmbig.vcf.gz \
+  H3_QC8_ibdClean_GRCh38_lifted_sorted.vcf.gz
+
+tabix -p vcf H3_QC8_GRCh38_noAmbig.vcf.gz
+```
+
+#### **Fix alleles vs GRCh38 FASTA** (this is where strand flips get corrected):
+
+```{bash}
+bcftools +fixref H3_QC8_GRCh38_noAmbig.vcf.gz \
+  -Oz -o H3_QC8_GRCh38_fixref.vcf.gz \
+  -- -f /home/tafum/H3_imputation/Liftover_GRCh38/GRCh38/GRCh38.fa -m flip -m swap
+```
+
+#### Remove Indels and Multiallelic SNPs
+
+```{bash}
+bcftools view \
+  -m2 -M2 -v snps \
+  -Oz -o H3_QC8_GRCh38_fixref_snps.vcf.gz \
+  H3_QC8_GRCh38_fixref.vcf.gz
+
+tabix -p vcf H3_QC8_GRCh38_fixref_snps.vcf.gz
+```
+
+Set Base
+
+```{bash}
+BASE=H3_QC8_GRCh38_fixref_snps.vcf.gz
+echo $BASE
+```
+
+Create chromosome rename map
+
+```{bash}
+cat > chr_rename.txt <<EOF
+1   chr1
+2   chr2
+3   chr3
+4   chr4
+5   chr5
+6   chr6
+7   chr7
+8   chr8
+9   chr9
+10  chr10
+11  chr11
+12  chr12
+13  chr13
+14  chr14
+15  chr15
+16  chr16
+17  chr17
+18  chr18
+19  chr19
+20  chr20
+21  chr21
+22  chr22
+X   chrX
+Y   chrY
+EOF
+```
+
+Check the file
+
+```{bash}
+cat chr_rename.txt
+```
+
+Make sure it really is `old new` (e.g. `1   chr1`), not reversed.
+
+## Run `--rename-chrs` *properly* on the combined VCF
+
+Now run this **exact** command (don’t change order, don’t omit `$BASE`):
+
+```{bash}
+bcftools annotate \
+  --rename-chrs chr_rename.txt \
+  -Oz -o H3_QC8_GRCh38_fixref_snps_chr.vcf.gz \
+  $BASE
+```
+
+If it works, it will be silent (no usage text). Now index:
+
+```{bash}
+tabix -p vcf H3_QC8_GRCh38_fixref_snps_chr.vcf.gz
+```
+
+Now **diagnose that new file**:
+
+```{bash}
+bcftools view -h H3_QC8_GRCh38_fixref_snps_chr.vcf.gz | grep '^##contig' | head
+bcftools query -f '%CHROM\n' H3_QC8_GRCh38_fixref_snps_chr.vcf.gz | sort -u
+```
+
+You should now see:
+
+-   Header lines like: `##contig=<ID=chr1,length=248956422,assembly=GRCh38.fa>`
+
+-   And CHROM values: `chr1 chr2 … chr22 chrX`
+
+#### Split chromosomes into Individual Chromosomes
+
+``` {FINAL="H3_QC8_GRCh38_fixref_snps_chr.vcf.gz"}
+
+for chr in {1..22} X; do
+  echo "Extracting chr${chr} ..."
+  bcftools view \
+    -r chr${chr} \
+    -Oz -o H3_QC8_GRCh38_fixref_snps_chr${chr}.vcf.gz \
+    $FINAL
+
+  tabix -p vcf H3_QC8_GRCh38_fixref_snps_chr${chr}.vcf.gz
+done
+```
+
+#### Sanity Checks
+
+Pick say chromosome 1 and inspect
+
+```{bash}
+bcftools query -f '%CHROM\n' H3_QC8_GRCh38_fixref_snps_chr1.vcf.gz | sort -u
+```
+
+Upload to Imputation Server
+
+#### Download from Imputation Server
+
+```{bash}
+#!/bin/bash
+set -e
+
+PASSWORD="PUT_YOUR_PASSWORD_HERE"
+LINK="https://impute.afrigen-d.org/get/nfHFNeBqt2eYrYrnAReI7ZQOMcajKnMVrdmEa6zD"
+
+echo ""
+echo "Downloading imputation results..."
+curl -sL $LINK | bash -s "$PASSWORD"
+echo ""
+echo "All files downloaded successfully."
+```
+
+#### Unzip all chromosomes
+
+```{bash}
+cd ~/H3_imputation/final/imputated_data
+
+for chr in {1..22}; do
+  echo "Unzipping chr_${chr}.zip ..."
+  unzip -o chr_${chr}.zip -d chr_${chr}
+done
+```
+
+## Create the post-imputation QC + merge script
+
+In `~/H3_imputation/final/imputated_data`, create this file:
+
+```{bash}
+nano post_impute_QC_and_merge.sh
+```
+
+Paste this in:
+
+```{bash}
+#!/bin/bash
+set -euo pipefail
+
+cd ~/H3_imputation/final/imputated_data
+
+# ---------------- CONFIG ----------------
+INFO_FIELD="R2"      # from VCF header: Estimated Imputation Accuracy (R-square)
+INFO_THRESH=0.3      # you can increase to 0.5 or 0.8 if you want stricter QC
+MAF_PLINK=0.01       # MAF threshold for PLINK QC
+GENO_PLINK=0.02      # SNP missingness
+MIND_PLINK=0.02      # sample missingness
+# ----------------------------------------
+
+echo "=== 1. Concatenate chunk VCFs per chromosome ==="
+
+for chr in {1..22}; do
+  echo ""
+  echo ">>> Chromosome ${chr}: concatenating chunk VCFs"
+
+  ls chr_${chr}/*.vcf.gz > chr_${chr}_vcf_list.txt
+
+  bcftools concat -f chr_${chr}_vcf_list.txt -Oz -o imputed_chr${chr}.vcf.gz
+  tabix -p vcf imputed_chr${chr}.vcf.gz
+done
+
+echo ""
+echo "=== 2. VCF-level post-imputation QC (INFO/R2 + SNPs only) ==="
+
+for chr in {1..22}; do
+  IN_VCF="imputed_chr${chr}.vcf.gz"
+  OUT_VCF="imputed_chr${chr}_filt.vcf.gz"
+
+  echo ""
+  echo ">>> Chromosome ${chr}: filtering ${IN_VCF} -> ${OUT_VCF}"
+
+  bcftools view \
+    -i "INFO/${INFO_FIELD}>=${INFO_THRESH}" \
+    -m2 -M2 -v snps \
+    -Oz -o "${OUT_VCF}" \
+    "${IN_VCF}"
+
+  tabix -p vcf "${OUT_VCF}"
+done
+
+echo ""
+echo "=== 3. Convert filtered VCFs to PLINK per chromosome ==="
+
+for chr in {1..22}; do
+  VCF="imputed_chr${chr}_filt.vcf.gz"
+  OUT="imputed_chr${chr}_plink"
+
+  echo ""
+  echo ">>> Chromosome ${chr}: converting ${VCF} -> ${OUT}.bed/bim/fam"
+
+  plink \
+    --vcf "${VCF}" \
+    --double-id \
+    --keep-allele-order \
+    --make-bed \
+    --out "${OUT}"
+done
+
+echo ""
+echo "=== 4. Merge all chromosomes into one PLINK dataset ==="
+
+BASE_PREFIX="imputed_chr1_plink"
+MERGE_LIST="merge_list.txt"
+
+rm -f "${MERGE_LIST}"
+
+for chr in {2..22}; do
+  echo "imputed_chr${chr}_plink.bed imputed_chr${chr}_plink.bim imputed_chr${chr}_plink.fam" >> "${MERGE_LIST}"
+done
+
+plink \
+  --bfile "${BASE_PREFIX}" \
+  --merge-list "${MERGE_LIST}" \
+  --make-bed \
+  --out imputed_all_chr_merged
+
+echo ""
+echo "=== 5. Final PLINK QC on merged imputed dataset ==="
+
+plink \
+  --bfile imputed_all_chr_merged \
+  --geno ${GENO_PLINK} \
+  --mind ${MIND_PLINK} \
+  --maf ${MAF_PLINK} \
+  --hwe 1e-6 midp \
+  --make-bed \
+  --out imputed_all_chr_QC
+
+echo ""
+echo "All done ✅"
+echo "Final GWAS-ready dataset: imputed_all_chr_QC.{bed,bim,fam}"
+```
+
+Save and exit.
+
+Then run:
+
+```{bash}
+chmod +x post_impute_QC_and_merge.sh
+./post_impute_QC_and_merge.sh
+```
+
+## What you’ll end up with
+
+-   Per-chromosome filtered VCFs: `imputed_chr${chr}_filt.vcf.gz`
+
+-   Per-chromosome PLINK: `imputed_chr${chr}_plink.{bed,bim,fam}`
+
+-   Merged, pre-QC PLINK: `imputed_all_chr_merged.{bed,bim,fam}`
+
+**Final GWAS-ready dataset (after post-imputation QC):**\
+👉 `imputed_all_chr_QC.{bed,bim,fam}`
+
+#### Add unique IDs to each filtered per-chr VCFundefined
+
+```{bash}
+cd ~/H3_imputation/final/imputated_data  
+for chr in {1..22}; do   echo "Setting IDs for chr${chr}..."   bcftools annotate \     --set-id '%CHROM:%POS:%REF:%ALT' \     -Oz -o imputed_chr${chr}_filt_id.vcf.gz \     imputed_chr${chr}_filt.vcf.gz    tabix -p vcf imputed_chr${chr}_filt_id.vcf.gz done
+```
+
+#### Quick sanity checks
+
+```{bash}
+bcftools query -f '%ID\t%CHROM\t%POS\t%REF\t%ALT\n' imputed_chr1_filt_id.vcf.gz | head # should look like: # 1:10583:A:G   1   10583   A   G
+```
+
+#### Concatenate all chromosomes into one whole genome VCF
+
+```{bash}
+Add unique IDs to each filtered per-chr VCFundefined
+
+{bash}
+cd ~/H3_imputation/final/imputated_data
+
+for chr in {1..22}; do
+  echo "Setting IDs for chr${chr}..."
+  bcftools annotate \
+    --set-id '%CHROM:%POS:%REF:%ALT' \
+    -Oz -o imputed_chr${chr}_filt_id.vcf.gz \
+    imputed_chr${chr}_filt.vcf.gz
+
+  tabix -p vcf imputed_chr${chr}_filt_id.vcf.gz
+done
+
+Quick sanity checks
+
+{bash}
+bcftools query -f '%ID\t%CHROM\t%POS\t%REF\t%ALT\n' imputed_chr1_filt_id.vcf.gz | head
+# should look like:
+# 1:10583:A:G   1   10583   A   G
+
+Concatenate all chromosomes into one whole genome VCF
+
+{bash}
+echo "Concatenating all chromosomes into one VCF..."
+bcftools concat \
+  imputed_chr1_filt_id.vcf.gz \
+  imputed_chr2_filt_id.vcf.gz \
+  imputed_chr3_filt_id.vcf.gz \
+  imputed_chr4_filt_id.vcf.gz \
+  imputed_chr5_filt_id.vcf.gz \
+  imputed_chr6_filt_id.vcf.gz \
+  imputed_chr7_filt_id.vcf.gz \
+  imputed_chr8_filt_id.vcf.gz \
+  imputed_chr9_filt_id.vcf.gz \
+  imputed_chr10_filt_id.vcf.gz \
+  imputed_chr11_filt_id.vcf.gz \
+  imputed_chr12_filt_id.vcf.gz \
+  imputed_chr13_filt_id.vcf.gz \
+  imputed_chr14_filt_id.vcf.gz \
+  imputed_chr15_filt_id.vcf.gz \
+  imputed_chr16_filt_id.vcf.gz \
+  imputed_chr17_filt_id.vcf.gz \
+  imputed_chr18_filt_id.vcf.gz \
+  imputed_chr19_filt_id.vcf.gz \
+  imputed_chr20_filt_id.vcf.gz \
+  imputed_chr21_filt_id.vcf.gz \
+  imputed_chr22_filt_id.vcf.gz \
+  -Oz -o imputed_all_filt_id.vcf.gz
+
+tabix -p vcf imputed_all_filt_id.vcf.gz
+```
+
+Covert vcf to PLINK Files
+
+```{bash}
+plink \
+  --vcf imputed_all_filt_id.vcf.gz \
+  --double-id \
+  --keep-allele-order \
+  --make-bed \
+  --out imputed_all_chr_raw
+```
+
+This will not contain sex and case/control stausts.
+
+So use the original .fam file to append the sex and case/control status
+
+```{bash}
+awk '
+  NR==FNR {
+    # First pass: read original fam into maps
+    sex[$2]   = $5   # $2 = IID, $5 = SEX
+    pheno[$2] = $6   # $6 = PHENO
+    next
+  }
+  {
+    # Second pass: process imputed fam
+    # FID/IID look like 250300001348_250300001348
+    split($1, a, "_")
+    core = a[1]            # 250300001348
+
+    # Replace FID and IID with the core ID
+    $1 = core
+    $2 = core
+
+    # Fill in SEX and PHENO from original fam
+    $5 = sex[core]
+    $6 = pheno[core]
+
+    print
+  }
+' ~/Final_Analysis/H3_Africa_order_3220_original_annotation.fam \
+  imputed_all_chr_raw.fam > imputed_all_chr_raw_annot.fam
+```
+
+Then replace the old `.fam` with the annotated one:
+
+```{bash}
+mv imputed_all_chr_raw_annot.fam imputed_all_chr_raw.fam
+```
+
+Quick sanity checks
+
+```{bash}
+head imputed_all_chr_raw.fam
+```
+
+You should see something like this:
+
+`250300001348 250300001348 0 0 2 1250300001349 250300001349 0 0 1 1 250300001350 250300001350 0 0 2 1...`
+
+#### Now run final QC on this annotated dataset
+
+```{bash}
+plink \
+  --bfile imputed_all_chr_raw \
+  --geno 0.02 \
+  --mind 0.02 \
+  --maf 0.01 \
+  --hwe 1e-6 midp \
+  --make-bed \
+  --out imputed_all_chr_QC
+```
+
+Your **final GWAS-ready dataset** (with correct sex + case/control) is
+
+`imputed_all_chr_QC.{bed,bim,fam}`
+
+This is now the set you should use for all downstream GWAS (logistic regression, linear, etc.).
+
+Builld a covariate file for the GWAS
+
+```{bash}
+# ============================
+# Build covariate file WITH SEX
+# ============================
+
+pca_file   <- "/home/tafum/H3_imputation/PCA/H3_PCA.eigenvec"
+pheno_file <- "/home/tafum/H3_imputation/final/GWAS/H3_pheno.phe.txt"
+fam_file   <- "/home/tafum/Final_Analysis/H3_Africa_order_3220_original_annotation.fam"
+out_file   <- "/home/tafum/H3_imputation/final/GWAS/H3_covariates_PC20.txt"
+
+# -------------------------------
+# 1. Read PCA eigenvectors
+# -------------------------------
+pca <- read.table(pca_file, header = FALSE, stringsAsFactors = FALSE)
+n_pcs <- ncol(pca) - 2
+pc_names <- paste0("PC", seq_len(n_pcs))
+colnames(pca) <- c("FID", "IID", pc_names)
+
+# -------------------------------
+# 2. Read phenotype file (AGE + REGION)
+# -------------------------------
+pheno <- read.table(pheno_file, header = TRUE, stringsAsFactors = FALSE, sep = "\t")
+
+# -------------------------------
+# 3. Read the original fam to get SEX
+# -------------------------------
+fam <- read.table(fam_file, header = FALSE, stringsAsFactors = FALSE)
+colnames(fam) <- c("FAM_FID", "IID", "FATHER", "MOTHER", "SEX", "PHENO")
+
+# -------------------------------
+# 4. Merge pheno + PCA
+# -------------------------------
+covar <- merge(
+  pheno[, c("FID", "IID", "AGE", "REGION")],
+  pca,
+  by = c("FID", "IID"),
+  all = FALSE
+)
+
+# -------------------------------
+# 5. Add SEX from fam using IID
+# -------------------------------
+covar2 <- merge(
+  covar,
+  fam[, c("IID", "SEX")],
+  by = "IID",
+  all.x = TRUE
+)
+
+# -------------------------------
+# 6. Keep AGE, REGION, SEX, and 20 PCs
+# -------------------------------
+max_pcs <- min(20, n_pcs)
+pc_keep <- paste0("PC", 1:max_pcs)
+
+covar_out <- covar2[, c("FID", "IID", "SEX", "AGE", "REGION", pc_keep)]
+
+# -------------------------------
+# 7. Write output
+# -------------------------------
+write.table(
+  covar_out,
+  file = out_file,
+  quote = FALSE,
+  sep = "\t",
+  row.names = FALSE
+)
+
+cat("Covariate file written to:", out_file, "\n")
+```
+
+# Using H3AfricaBioNet Nextflow
+
+Create a sample phenotype file that contains case-control status as `PHE`
+
+```{bash}
+cd /mnt/c/Users/theop/H3_Nextflow
+
+# Header must have a column literally named "PHE" (case-sensitive)
+printf "FID\tIID\tPHE\n" > sample.phe
+awk -v OFS="\t" '{print $1, $2, $6}' H3_Africa_order_3220_original_annotation.fam >> sample.phe
+```
+
+Neftflow command
+
+```{bash}
+cd /mnt/c/Users/theop/H3_Nextflow/h3agwas
+
+JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 NXF_VER=22.10.8 nextflow run qc/main.nf \
+    -profile docker \
+    --input_dir "/mnt/c/Users/theop/H3_Nextflow/" \
+    --input_pat "H3_Africa_order_3220_original_annotation" \
+    --output_dir "./qc_results" \
+    -resume
+```
+
+Association analysis
+
+```{bash}
+cd /mnt/c/Users/theop/H3_Nextflow/h3agwas
+
+# Clean everything
+rm -rf work/ .nextflow/ ../assoc_results/
+
+# THIS IS THE ONE THAT WORKS – give it the ORIGINAL files (not the QC’d ones)
+JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
+NXF_VER=22.10.8 \
+nextflow run assoc/main.nf \
+    -profile docker \
+    --input_dir "/mnt/c/Users/theop/H3_Nextflow" \
+    --input_pat "H3_Africa_order_3220_original_annotation" \
+    --data "../sample.phe" \
+    --pheno PHE \
+    --output_dir "../assoc_results" \
+    --output "H3_Africa_order_3220_original_annotation" \
+    --assoc 1 \
+    -with-timeline ../assoc_timeline.html \
+    -with-report ../assoc_report.html
+```
+
+#### 
