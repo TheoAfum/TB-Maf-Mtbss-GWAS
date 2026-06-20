@@ -24,7 +24,7 @@
 #   - results/gwas_top_hits.txt
 #   - results/gwas_qc_summary.txt
 #
-# AUTHOR: [Your Name]
+# AUTHOR: Theophilus Afum
 # DATE: 2024
 # LICENSE: MIT
 ################################################################################

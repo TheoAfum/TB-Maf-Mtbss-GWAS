@@ -13,8 +13,10 @@ suppressPackageStartupMessages({
 # -------------------------------------------------------
 # Configuration
 # -------------------------------------------------------
-MAGMA_GENE_FILE <- "/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_plots/MAGMA_analysis/genome_wide_gene_analysis.genes.out"
-OUTPUT_DIR <- "/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_plots/Pathway_analysis"
+# Paths can be overridden via environment variables; defaults are relative to the
+# repository root.
+MAGMA_GENE_FILE <- Sys.getenv("MAGMA_GENE_FILE", "results/magma/genome_wide_gene_analysis.genes.out")
+OUTPUT_DIR <- Sys.getenv("PATHWAY_OUTPUT_DIR", "results/pathway")
 
 cat("================================\n")
 cat("Pathway Enrichment Analysis\n")

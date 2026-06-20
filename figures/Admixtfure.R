@@ -18,14 +18,16 @@ suppressPackageStartupMessages({
 # -------------------------------------------------------
 # Configuration
 # -------------------------------------------------------
-INPUT_PREFIX <- "H3_QC8_ibdClean"
-RESULTS_DIR <- "/home/tafum/H3_imputation/ADMIXTURE/No_merge/ADMIXTURE_results"
-OUTPUT_DIR <- "/home/tafum/H3_imputation/ADMIXTURE/No_merge/ADMIXTURE_results/ADMIXTURE_plots"
+INPUT_PREFIX <- Sys.getenv("ADMIXTURE_PREFIX", "H3_QC8_ibdClean")
+# Paths can be overridden via environment variables; defaults are relative to the
+# repository root.
+RESULTS_DIR <- Sys.getenv("ADMIXTURE_RESULTS", "results/admixture")
+OUTPUT_DIR <- Sys.getenv("ADMIXTURE_PLOTS", file.path(RESULTS_DIR, "plots"))
 MIN_K <- 2
 MAX_K <- 10
 
-# Optional: Load phenotype data for sorting/labeling
-PHENO_FILE <- "/home/tafum/H3_imputation/final/GWAS/H3_pheno.phe.txt"  # Set to NULL if not available
+# Optional: Load phenotype data for sorting/labeling. Set PHENO_FILE="" to skip.
+PHENO_FILE <- Sys.getenv("PHENO_FILE", "data/H3_pheno.phe.txt")
 
 cat("================================\n")
 cat("ADMIXTURE Visualization\n")
@@ -36,7 +38,7 @@ cat("Output directory:", OUTPUT_DIR, "\n")
 cat("================================\n\n")
 
 # Create output directory
-if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR)
+if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR, recursive = TRUE)
 
 # -------------------------------------------------------
 # 1) Parse Cross-Validation Errors

@@ -165,9 +165,10 @@ cat("Raw SNPs – 1000G:", n_snp_1000g_raw,
 # -------------------------------------------------------
 cat("=== Loading PLINK PCA for H3 internal structure ===\n")
 
-# Read PCA eigenvectors from PLINK - try multiple possible locations
-plink_eigenvec_file <- "/home/tafum/H3_imputation/PCA/New_PCA/H3_QC9_noOutliers_PCA.eigenvec"
-plink_eigenval_file <- "/home/tafum/H3_imputation/PCA/New_PCA/H3_QC9_noOutliers_PCA.eigenval"
+# Read PCA eigenvectors from PLINK - try multiple possible locations.
+# Paths can be overridden via environment variables; defaults are relative to repo root.
+plink_eigenvec_file <- Sys.getenv("PLINK_EIGENVEC", "results/pca/H3_QC9_noOutliers_PCA.eigenvec")
+plink_eigenval_file <- Sys.getenv("PLINK_EIGENVAL", "results/pca/H3_QC9_noOutliers_PCA.eigenval")
 
 # Also check current directory
 if (!file.exists(plink_eigenvec_file)) {

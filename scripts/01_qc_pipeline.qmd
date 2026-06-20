@@ -1067,8 +1067,8 @@ conda activate crossmap_env
 ### Downloading the GRCh38 reference genome from Ensemble
 
 ```{bash}
-mkdir -p /home/tafum/references/GRCh38
-cd /home/tafum/references/GRCh38
+mkdir -p $HOME/references/GRCh38
+cd $HOME/references/GRCh38
 ```
 
 ```{bash}
@@ -1097,8 +1097,8 @@ When running from Initial directory `H3_Imputation.`
 You can cp the files (`GRCh38, hg19TOHg38.over.chain.gz`) from the `reference` directory (after download) into your working `Liftover_GRCh38` directory.
 
 ```{bash}
-cp /home/tafum/reference/GRCh38 /home/tafum/H3_Imputation/Lifover_GRCh38
-cp /home/tafum/reference/hg19TOHg38.over.chain.gz /home/tafum/H3_Imputation/Liftover_GRCh38
+cp $HOME/reference/GRCh38 $HOME/H3_Imputation/Lifover_GRCh38
+cp $HOME/reference/hg19TOHg38.over.chain.gz $HOME/H3_Imputation/Liftover_GRCh38
 ```
 
 #You should run this from `~/H3_imputation/Liftover_GRCh38`:
@@ -1262,7 +1262,7 @@ tabix -p vcf H3_QC8_GRCh38_noAmbig.vcf.gz
 ```{bash}
 bcftools +fixref H3_QC8_GRCh38_noAmbig.vcf.gz \
   -Oz -o H3_QC8_GRCh38_fixref.vcf.gz \
-  -- -f /home/tafum/H3_imputation/Liftover_GRCh38/GRCh38/GRCh38.fa -m flip -m swap
+  -- -f $HOME/H3_imputation/Liftover_GRCh38/GRCh38/GRCh38.fa -m flip -m swap
 ```
 
 #### Remove Indels and Multiallelic SNPs
@@ -1687,10 +1687,10 @@ Builld a covariate file for the GWAS
 # Build covariate file WITH SEX
 # ============================
 
-pca_file   <- "/home/tafum/H3_imputation/PCA/H3_PCA.eigenvec"
-pheno_file <- "/home/tafum/H3_imputation/final/GWAS/H3_pheno.phe.txt"
-fam_file   <- "/home/tafum/Final_Analysis/H3_Africa_order_3220_original_annotation.fam"
-out_file   <- "/home/tafum/H3_imputation/final/GWAS/H3_covariates_PC20.txt"
+pca_file   <- Sys.getenv("PCA_FILE",   "results/pca/H3_PCA.eigenvec")
+pheno_file <- Sys.getenv("PHENO_FILE", "data/H3_pheno.phe.txt")
+fam_file   <- Sys.getenv("FAM_FILE",   "data/H3_Africa_order_3220_original_annotation.fam")
+out_file   <- Sys.getenv("COVAR_OUT",  "results/gwas/H3_covariates_PC20.txt")
 
 # -------------------------------
 # 1. Read PCA eigenvectors
@@ -1758,7 +1758,7 @@ cat("Covariate file written to:", out_file, "\n")
 Create a sample phenotype file that contains case-control status as `PHE`
 
 ```{bash}
-cd /mnt/c/Users/theop/H3_Nextflow
+cd $HOME/H3_Nextflow
 
 # Header must have a column literally named "PHE" (case-sensitive)
 printf "FID\tIID\tPHE\n" > sample.phe
@@ -1768,11 +1768,11 @@ awk -v OFS="\t" '{print $1, $2, $6}' H3_Africa_order_3220_original_annotation.fa
 Neftflow command
 
 ```{bash}
-cd /mnt/c/Users/theop/H3_Nextflow/h3agwas
+cd $HOME/H3_Nextflow/h3agwas
 
 JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 NXF_VER=22.10.8 nextflow run qc/main.nf \
     -profile docker \
-    --input_dir "/mnt/c/Users/theop/H3_Nextflow/" \
+    --input_dir "$HOME/H3_Nextflow/" \
     --input_pat "H3_Africa_order_3220_original_annotation" \
     --output_dir "./qc_results" \
     -resume
@@ -1781,7 +1781,7 @@ JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 NXF_VER=22.10.8 nextflow run qc/mai
 Association analysis
 
 ```{bash}
-cd /mnt/c/Users/theop/H3_Nextflow/h3agwas
+cd $HOME/H3_Nextflow/h3agwas
 
 # Clean everything
 rm -rf work/ .nextflow/ ../assoc_results/
@@ -1791,7 +1791,7 @@ JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
 NXF_VER=22.10.8 \
 nextflow run assoc/main.nf \
     -profile docker \
-    --input_dir "/mnt/c/Users/theop/H3_Nextflow" \
+    --input_dir "$HOME/H3_Nextflow" \
     --input_pat "H3_Africa_order_3220_original_annotation" \
     --data "../sample.phe" \
     --pheno PHE \

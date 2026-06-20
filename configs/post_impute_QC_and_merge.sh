@@ -1,7 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-cd ~/H3_imputation/final/imputated_data
+# Run this from the directory containing the per-chromosome imputed data
+# (chr_1/, chr_2/, ... each with chunk VCFs). Override with WORKDIR if needed.
+WORKDIR="${WORKDIR:-.}"
+cd "${WORKDIR}"
 
 # ---------------- CONFIG ----------------
 INFO_FIELD="R2"      # from VCF header: Estimated Imputation Accuracy (R-square)

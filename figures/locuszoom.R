@@ -21,9 +21,11 @@ if (!require("ggrepel", quietly = TRUE)) {
   library(ggrepel)
 }
 
-GWAS_RESULTS <- "/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_MAF_vs_Mtbss_cleaned.txt"
-ANNOTATED_FILE <- "/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_plots/GWAS_annotation/annotated_top_hits.txt"
-OUTPUT_DIR <- "LocusZoom_premium"
+# Paths can be overridden via environment variables; defaults are relative to the
+# repository root.
+GWAS_RESULTS <- Sys.getenv("GWAS_RESULTS", "results/gwas/GWAS_MAF_vs_Mtbss_cleaned.txt")
+ANNOTATED_FILE <- Sys.getenv("ANNOTATED_HITS", "results/gwas/annotated_top_hits.txt")
+OUTPUT_DIR <- Sys.getenv("OUTPUT_DIR", "results/gwas/LocusZoom_premium")
 GENOME_BUILD <- "GRCh38"
 WINDOW_SIZE <- 500000
 

@@ -13,9 +13,10 @@ suppressPackageStartupMessages({
 # -------------------------------------------------------
 # Configuration
 # -------------------------------------------------------
-ANNOTATION_FILE <- "/home/tafum/H3_imputation/H3_Africa_order_3220_original_annotation.anno.txt"  # Your annotation file
-INPUT_PREFIX <- "/home/tafum/H3_imputation/final/GWAS/Final_GWAS/imputed_all_chr_QC"       # Input PLINK files (without extension)
-OUTPUT_PREFIX <- "imputed_rsID" # Output PLINK files (without extension)
+# Paths can be overridden via environment variables; defaults are relative to repo root.
+ANNOTATION_FILE <- Sys.getenv("ANNOTATION_FILE", "data/H3_Africa_order_3220_original_annotation.anno.txt")  # Annotation file
+INPUT_PREFIX <- Sys.getenv("INPUT_PREFIX", "data/imputed_all_chr_QC")  # Input PLINK files (without extension)
+OUTPUT_PREFIX <- Sys.getenv("OUTPUT_PREFIX", "imputed_rsID") # Output PLINK files (without extension)
 
 cat("================================\n")
 cat("Restore rsIDs to PLINK files\n")

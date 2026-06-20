@@ -15,15 +15,17 @@ suppressPackageStartupMessages({
 # -------------------------------------------------------
 # Configuration
 # -------------------------------------------------------
-RESULTS_FILE <- "/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_MAF_vs_Mtbss_cleaned.txt"  # Or _logistic_cleaned.txt
-OUTPUT_DIR <- "GWAS_plots"
+# Paths can be overridden via environment variables; defaults are relative to the
+# repository root. e.g. GWAS_RESULTS=/path/to/file.txt Rscript figures/GWAS.R
+RESULTS_FILE <- Sys.getenv("GWAS_RESULTS", "results/gwas/GWAS_MAF_vs_Mtbss_cleaned.txt")  # Or _logistic_cleaned.txt
+OUTPUT_DIR <- Sys.getenv("OUTPUT_DIR", "results/gwas/GWAS_plots")
 
 cat("================================\n")
 cat("GWAS Visualization\n")
 cat("================================\n\n")
 
 # Create output directory
-if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR)
+if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR, recursive = TRUE)
 
 # -------------------------------------------------------
 # Load results

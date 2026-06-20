@@ -9,13 +9,20 @@
 set -e
 
 # -------------------------------------------------------
-# Configuration
+# Configuration (override any of these via environment variables)
+# Defaults are relative to the repository root.
 # -------------------------------------------------------
-GWAS_FILE="/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_MAF_vs_Mtbss_cleaned.txt"
-GENO_PREFIX="/home/tafum/H3_imputation/final/GWAS/Final_GWAS/imputed_all_chr_QC"
-OUTPUT_DIR="/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_plots/MAGMA_analysis"
-GENE_LOC_FILE="$OUTPUT_DIR/NCBI38.gene.loc"
-GENESETS_FILE="/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_plots/tb_immune_genesets.txt"
+GWAS_FILE="${GWAS_FILE:-results/gwas/GWAS_MAF_vs_Mtbss_cleaned.txt}"
+GENO_PREFIX="${GENO_PREFIX:-data/imputed_all_chr_QC}"
+OUTPUT_DIR="${OUTPUT_DIR:-results/magma}"
+GENESETS_FILE="${GENESETS_FILE:-configs/tb_immune_genesets.txt}"
+
+# Resolve input paths to absolute so they survive the `cd` into OUTPUT_DIR below.
+resolve_path() { readlink -f "$1" 2>/dev/null || echo "$1"; }
+GWAS_FILE="$(resolve_path "$GWAS_FILE")"
+GENO_PREFIX="$(resolve_path "$GENO_PREFIX")"
+GENESETS_FILE="$(resolve_path "$GENESETS_FILE")"
+export GWAS_FILE  # used by the embedded Rscript below
 
 echo "================================"
 echo "MAGMA Genome-Wide Analysis"
@@ -23,8 +30,10 @@ echo "ALL Chromosomes"
 echo "================================"
 echo ""
 
-mkdir -p ${OUTPUT_DIR}
-cd ${OUTPUT_DIR}
+mkdir -p "${OUTPUT_DIR}"
+OUTPUT_DIR="$(resolve_path "$OUTPUT_DIR")"
+GENE_LOC_FILE="$OUTPUT_DIR/NCBI38.gene.loc"
+cd "${OUTPUT_DIR}"
 
 # -------------------------------------------------------
 # Step 1: Prepare genome-wide GWAS data
@@ -35,7 +44,7 @@ Rscript - <<'EOF'
 library(data.table)
 library(dplyr)
 
-gwas <- fread("/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_MAF_vs_Mtbss_cleaned.txt")
+gwas <- fread(Sys.getenv("GWAS_FILE"))
 
 # Standardize columns
 if ("#CHROM" %in% names(gwas)) {

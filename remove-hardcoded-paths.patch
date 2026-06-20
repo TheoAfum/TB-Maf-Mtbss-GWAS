@@ -1,0 +1,422 @@
+From 2d14a832f8b7e339322656c1ade94abc24ffa9b5 Mon Sep 17 00:00:00 2001
+From: Theophilus Afum <tafum@noguchi.ug.edu.gh>
+Date: Sat, 20 Jun 2026 14:20:08 +0000
+Subject: [PATCH] Remove hardcoded paths; make scripts portable for reuse
+
+- Replace machine-specific absolute paths (/home/tafum, /mnt/c/Users/theop)
+  with relative defaults overridable via environment variables
+- R scripts: Sys.getenv(VAR, relative_default); shell: ${VAR:-relative_default}
+- 04_magma_analysis.sh: resolve input/output paths to absolute before cd
+- Make nested output dirs created with recursive=TRUE
+- 01_qc_pipeline.qmd: genericize example paths to $HOME / relative
+- README: fix contact email typo, fix clone URL, update script list to match
+  actual files, add Configuration/paths section
+- Fill in author placeholder in 03_case_case_gwas.sh
+---
+ README.md                              | 61 +++++++++++++++++++-------
+ configs/post_impute_QC_and_merge.sh    |  5 ++-
+ configs/restore_rsid.R                 |  7 +--
+ figures/Admixtfure.R                   | 14 +++---
+ figures/GWAS.R                         |  8 ++--
+ figures/locuszoom.R                    |  8 ++--
+ scripts/01_qc_pipeline.qmd             | 28 ++++++------
+ scripts/02_pca_BigSNP.R                |  7 +--
+ scripts/03_case_case_gwas.sh           |  2 +-
+ scripts/04_magma_analysis.sh           | 27 ++++++++----
+ scripts/05_pathway_with_geneset_plot.R |  6 ++-
+ 11 files changed, 113 insertions(+), 60 deletions(-)
+
+diff --git a/README.md b/README.md
+index dc4de50..4d2b0b2 100644
+--- a/README.md
++++ b/README.md
+@@ -11,13 +11,39 @@ GitHub: https://github.com/TheoAfum/TB-Maf-Mtbss-GWAS
+ 
+ ## Contents
+ 
+-### Scripts
+-- **01_qc_pipeline.R** - Genotype quality control (PLINK)
+-- **02_pca_admixture.R** - Population structure analysis
+-- **03_gwas_analysis.sh** - Case-case GWAS (logistic regression, Firth-fallback)
+-- **04_magma_analysis.R** - Gene-based association testing
+-- **05_pathway_enrichment.R** - Pathway enrichment using EnrichR & MAGMA GSA
+-- **06_visualization.R** - Generate publication figures
++### Scripts (`scripts/`)
++- **01_qc_pipeline.qmd** - Genotype QC, liftover, imputation prep and post-imputation steps (PLINK/bcftools)
++- **02_pca_BigSNP.R** - Population structure / PCA (bigsnpr projection onto 1000 Genomes)
++- **02.5_admixture.sh** - ADMIXTURE runs for K=2–10 with cross-validation
++- **03_case_case_gwas.sh** - Case-case GWAS (logistic regression, Firth-fallback)
++- **04_magma_analysis.sh** - Genome-wide gene-based and gene-set association (MAGMA)
++- **05_pathway_with_geneset_plot.R** - Pathway enrichment (EnrichR) with plots
++- **geneset_plots_BH.R** - GSEA forest plots from BH-corrected MAGMA gene-set results
++- **qc_tracker.R** - Per-step QC tracking table (counts, filters, exclusions)
++
++### Figures (`figures/`)
++- **GWAS.R** - Manhattan and QQ plots
++- **locuszoom.R** - Regional (LocusZoom-style) plots
++- **Admixtfure.R** - ADMIXTURE bar plots and CV-error plot
++- **genomewide_magma.R** - Integrated multi-panel gene/pathway figure
++
++### Configs (`configs/`)
++- **install_dependencies.R** - Install required R packages
++- **post_impute_QC_and_merge.sh** - Concatenate, filter and merge imputed VCFs to a PLINK dataset
++- **restore_rsid.R** - Restore rsIDs to PLINK files from an annotation file
++- **covert_genesets_to_entrez.R** - Convert gene-set symbols to Entrez IDs
++- **tb_immune_genesets_symbols.txt** - Curated TB immune gene sets
++
++### Configuration / paths
++Scripts use **relative paths by default** (rooted at the repository, e.g. `data/`, `results/`, `configs/`) and create output folders as needed. No paths are hardcoded to a specific machine. Any input or output location can be overridden with an environment variable without editing the code, for example:
++
++```bash
++# R scripts read overrides via Sys.getenv(); shell scripts via ${VAR:-default}
++GWAS_RESULTS=/my/path/gwas.txt Rscript figures/GWAS.R
++GENO_PREFIX=/my/path/genotypes OUTPUT_DIR=/my/results bash scripts/04_magma_analysis.sh
++```
++
++The variable name is shown next to each path in the script's configuration block. Place input data under `data/` (or point the relevant variable at your own location) to run end-to-end.
+ 
+ ### Data
+ Individual-level genotype data are available through the European Genome-phenotype Archive (EGA) under managed access. 
+@@ -38,13 +64,18 @@ Summary statistics and metadata are provided in the `results/` folder.
+ ### Quick Start
+ ```bash
+ # Clone this repository
+-git clone https://github.com/YOUR-USERNAME/TB-Lineage-GWAS.git
+-cd TB-Lineage-GWAS
+-
+-# Run analysis pipeline (requires input data)
+-Rscript scripts/01_qc_pipeline.R
+-Rscript scripts/02_pca_admixture.R
+-# ... etc
++git clone https://github.com/TheoAfum/TB-Maf-Mtbss-GWAS.git
++cd TB-Maf-Mtbss-GWAS
++
++# Run analysis pipeline (requires input data under data/)
++# See "Configuration / paths" below to override locations.
++Rscript configs/install_dependencies.R
++# QC / imputation steps are documented in scripts/01_qc_pipeline.qmd
++Rscript scripts/02_pca_BigSNP.R
++bash    scripts/03_case_case_gwas.sh
++bash    scripts/04_magma_analysis.sh
++Rscript scripts/05_pathway_with_geneset_plot.R
++# ... then figures in figures/
+ ```
+ 
+ ### Detailed Instructions
+@@ -72,7 +103,7 @@ Individual-level data are managed-access through EGA to protect participant conf
+ ## Contact
+ For questions or collaboration:
+ - **Dorothy Yeboah-Manu** - dyeboah-manu@noguchi.ug.edu.gh
+-- **Theophilus Afum** - tafum@noguchi.ug.edugh
++- **Theophilus Afum** - tafum@noguchi.ug.edu.gh
+ 
+ ## License
+ MIT License - See LICENSE file for details
+diff --git a/configs/post_impute_QC_and_merge.sh b/configs/post_impute_QC_and_merge.sh
+index 0d29e06..782eb8a 100644
+--- a/configs/post_impute_QC_and_merge.sh
++++ b/configs/post_impute_QC_and_merge.sh
+@@ -1,7 +1,10 @@
+ #!/bin/bash
+ set -euo pipefail
+ 
+-cd ~/H3_imputation/final/imputated_data
++# Run this from the directory containing the per-chromosome imputed data
++# (chr_1/, chr_2/, ... each with chunk VCFs). Override with WORKDIR if needed.
++WORKDIR="${WORKDIR:-.}"
++cd "${WORKDIR}"
+ 
+ # ---------------- CONFIG ----------------
+ INFO_FIELD="R2"      # from VCF header: Estimated Imputation Accuracy (R-square)
+diff --git a/configs/restore_rsid.R b/configs/restore_rsid.R
+index 8c6073f..250698c 100644
+--- a/configs/restore_rsid.R
++++ b/configs/restore_rsid.R
+@@ -13,9 +13,10 @@ suppressPackageStartupMessages({
+ # -------------------------------------------------------
+ # Configuration
+ # -------------------------------------------------------
+-ANNOTATION_FILE <- "/home/tafum/H3_imputation/H3_Africa_order_3220_original_annotation.anno.txt"  # Your annotation file
+-INPUT_PREFIX <- "/home/tafum/H3_imputation/final/GWAS/Final_GWAS/imputed_all_chr_QC"       # Input PLINK files (without extension)
+-OUTPUT_PREFIX <- "imputed_rsID" # Output PLINK files (without extension)
++# Paths can be overridden via environment variables; defaults are relative to repo root.
++ANNOTATION_FILE <- Sys.getenv("ANNOTATION_FILE", "data/H3_Africa_order_3220_original_annotation.anno.txt")  # Annotation file
++INPUT_PREFIX <- Sys.getenv("INPUT_PREFIX", "data/imputed_all_chr_QC")  # Input PLINK files (without extension)
++OUTPUT_PREFIX <- Sys.getenv("OUTPUT_PREFIX", "imputed_rsID") # Output PLINK files (without extension)
+ 
+ cat("================================\n")
+ cat("Restore rsIDs to PLINK files\n")
+diff --git a/figures/Admixtfure.R b/figures/Admixtfure.R
+index 2c8b973..23e855a 100644
+--- a/figures/Admixtfure.R
++++ b/figures/Admixtfure.R
+@@ -18,14 +18,16 @@ suppressPackageStartupMessages({
+ # -------------------------------------------------------
+ # Configuration
+ # -------------------------------------------------------
+-INPUT_PREFIX <- "H3_QC8_ibdClean"
+-RESULTS_DIR <- "/home/tafum/H3_imputation/ADMIXTURE/No_merge/ADMIXTURE_results"
+-OUTPUT_DIR <- "/home/tafum/H3_imputation/ADMIXTURE/No_merge/ADMIXTURE_results/ADMIXTURE_plots"
++INPUT_PREFIX <- Sys.getenv("ADMIXTURE_PREFIX", "H3_QC8_ibdClean")
++# Paths can be overridden via environment variables; defaults are relative to the
++# repository root.
++RESULTS_DIR <- Sys.getenv("ADMIXTURE_RESULTS", "results/admixture")
++OUTPUT_DIR <- Sys.getenv("ADMIXTURE_PLOTS", file.path(RESULTS_DIR, "plots"))
+ MIN_K <- 2
+ MAX_K <- 10
+ 
+-# Optional: Load phenotype data for sorting/labeling
+-PHENO_FILE <- "/home/tafum/H3_imputation/final/GWAS/H3_pheno.phe.txt"  # Set to NULL if not available
++# Optional: Load phenotype data for sorting/labeling. Set PHENO_FILE="" to skip.
++PHENO_FILE <- Sys.getenv("PHENO_FILE", "data/H3_pheno.phe.txt")
+ 
+ cat("================================\n")
+ cat("ADMIXTURE Visualization\n")
+@@ -36,7 +38,7 @@ cat("Output directory:", OUTPUT_DIR, "\n")
+ cat("================================\n\n")
+ 
+ # Create output directory
+-if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR)
++if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR, recursive = TRUE)
+ 
+ # -------------------------------------------------------
+ # 1) Parse Cross-Validation Errors
+diff --git a/figures/GWAS.R b/figures/GWAS.R
+index ffea228..2c65e0f 100644
+--- a/figures/GWAS.R
++++ b/figures/GWAS.R
+@@ -15,15 +15,17 @@ suppressPackageStartupMessages({
+ # -------------------------------------------------------
+ # Configuration
+ # -------------------------------------------------------
+-RESULTS_FILE <- "/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_MAF_vs_Mtbss_cleaned.txt"  # Or _logistic_cleaned.txt
+-OUTPUT_DIR <- "GWAS_plots"
++# Paths can be overridden via environment variables; defaults are relative to the
++# repository root. e.g. GWAS_RESULTS=/path/to/file.txt Rscript figures/GWAS.R
++RESULTS_FILE <- Sys.getenv("GWAS_RESULTS", "results/gwas/GWAS_MAF_vs_Mtbss_cleaned.txt")  # Or _logistic_cleaned.txt
++OUTPUT_DIR <- Sys.getenv("OUTPUT_DIR", "results/gwas/GWAS_plots")
+ 
+ cat("================================\n")
+ cat("GWAS Visualization\n")
+ cat("================================\n\n")
+ 
+ # Create output directory
+-if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR)
++if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR, recursive = TRUE)
+ 
+ # -------------------------------------------------------
+ # Load results
+diff --git a/figures/locuszoom.R b/figures/locuszoom.R
+index 5caf505..29a119b 100644
+--- a/figures/locuszoom.R
++++ b/figures/locuszoom.R
+@@ -21,9 +21,11 @@ if (!require("ggrepel", quietly = TRUE)) {
+   library(ggrepel)
+ }
+ 
+-GWAS_RESULTS <- "/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_MAF_vs_Mtbss_cleaned.txt"
+-ANNOTATED_FILE <- "/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_plots/GWAS_annotation/annotated_top_hits.txt"
+-OUTPUT_DIR <- "LocusZoom_premium"
++# Paths can be overridden via environment variables; defaults are relative to the
++# repository root.
++GWAS_RESULTS <- Sys.getenv("GWAS_RESULTS", "results/gwas/GWAS_MAF_vs_Mtbss_cleaned.txt")
++ANNOTATED_FILE <- Sys.getenv("ANNOTATED_HITS", "results/gwas/annotated_top_hits.txt")
++OUTPUT_DIR <- Sys.getenv("OUTPUT_DIR", "results/gwas/LocusZoom_premium")
+ GENOME_BUILD <- "GRCh38"
+ WINDOW_SIZE <- 500000
+ 
+diff --git a/scripts/01_qc_pipeline.qmd b/scripts/01_qc_pipeline.qmd
+index 03bcf77..19df5ee 100644
+--- a/scripts/01_qc_pipeline.qmd
++++ b/scripts/01_qc_pipeline.qmd
+@@ -1067,8 +1067,8 @@ conda activate crossmap_env
+ ### Downloading the GRCh38 reference genome from Ensemble
+ 
+ ```{bash}
+-mkdir -p /home/tafum/references/GRCh38
+-cd /home/tafum/references/GRCh38
++mkdir -p $HOME/references/GRCh38
++cd $HOME/references/GRCh38
+ ```
+ 
+ ```{bash}
+@@ -1097,8 +1097,8 @@ When running from Initial directory `H3_Imputation.`
+ You can cp the files (`GRCh38, hg19TOHg38.over.chain.gz`) from the `reference` directory (after download) into your working `Liftover_GRCh38` directory.
+ 
+ ```{bash}
+-cp /home/tafum/reference/GRCh38 /home/tafum/H3_Imputation/Lifover_GRCh38
+-cp /home/tafum/reference/hg19TOHg38.over.chain.gz /home/tafum/H3_Imputation/Liftover_GRCh38
++cp $HOME/reference/GRCh38 $HOME/H3_Imputation/Lifover_GRCh38
++cp $HOME/reference/hg19TOHg38.over.chain.gz $HOME/H3_Imputation/Liftover_GRCh38
+ ```
+ 
+ #You should run this from `~/H3_imputation/Liftover_GRCh38`:
+@@ -1262,7 +1262,7 @@ tabix -p vcf H3_QC8_GRCh38_noAmbig.vcf.gz
+ ```{bash}
+ bcftools +fixref H3_QC8_GRCh38_noAmbig.vcf.gz \
+   -Oz -o H3_QC8_GRCh38_fixref.vcf.gz \
+-  -- -f /home/tafum/H3_imputation/Liftover_GRCh38/GRCh38/GRCh38.fa -m flip -m swap
++  -- -f $HOME/H3_imputation/Liftover_GRCh38/GRCh38/GRCh38.fa -m flip -m swap
+ ```
+ 
+ #### Remove Indels and Multiallelic SNPs
+@@ -1687,10 +1687,10 @@ Builld a covariate file for the GWAS
+ # Build covariate file WITH SEX
+ # ============================
+ 
+-pca_file   <- "/home/tafum/H3_imputation/PCA/H3_PCA.eigenvec"
+-pheno_file <- "/home/tafum/H3_imputation/final/GWAS/H3_pheno.phe.txt"
+-fam_file   <- "/home/tafum/Final_Analysis/H3_Africa_order_3220_original_annotation.fam"
+-out_file   <- "/home/tafum/H3_imputation/final/GWAS/H3_covariates_PC20.txt"
++pca_file   <- Sys.getenv("PCA_FILE",   "results/pca/H3_PCA.eigenvec")
++pheno_file <- Sys.getenv("PHENO_FILE", "data/H3_pheno.phe.txt")
++fam_file   <- Sys.getenv("FAM_FILE",   "data/H3_Africa_order_3220_original_annotation.fam")
++out_file   <- Sys.getenv("COVAR_OUT",  "results/gwas/H3_covariates_PC20.txt")
+ 
+ # -------------------------------
+ # 1. Read PCA eigenvectors
+@@ -1758,7 +1758,7 @@ cat("Covariate file written to:", out_file, "\n")
+ Create a sample phenotype file that contains case-control status as `PHE`
+ 
+ ```{bash}
+-cd /mnt/c/Users/theop/H3_Nextflow
++cd $HOME/H3_Nextflow
+ 
+ # Header must have a column literally named "PHE" (case-sensitive)
+ printf "FID\tIID\tPHE\n" > sample.phe
+@@ -1768,11 +1768,11 @@ awk -v OFS="\t" '{print $1, $2, $6}' H3_Africa_order_3220_original_annotation.fa
+ Neftflow command
+ 
+ ```{bash}
+-cd /mnt/c/Users/theop/H3_Nextflow/h3agwas
++cd $HOME/H3_Nextflow/h3agwas
+ 
+ JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 NXF_VER=22.10.8 nextflow run qc/main.nf \
+     -profile docker \
+-    --input_dir "/mnt/c/Users/theop/H3_Nextflow/" \
++    --input_dir "$HOME/H3_Nextflow/" \
+     --input_pat "H3_Africa_order_3220_original_annotation" \
+     --output_dir "./qc_results" \
+     -resume
+@@ -1781,7 +1781,7 @@ JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 NXF_VER=22.10.8 nextflow run qc/mai
+ Association analysis
+ 
+ ```{bash}
+-cd /mnt/c/Users/theop/H3_Nextflow/h3agwas
++cd $HOME/H3_Nextflow/h3agwas
+ 
+ # Clean everything
+ rm -rf work/ .nextflow/ ../assoc_results/
+@@ -1791,7 +1791,7 @@ JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
+ NXF_VER=22.10.8 \
+ nextflow run assoc/main.nf \
+     -profile docker \
+-    --input_dir "/mnt/c/Users/theop/H3_Nextflow" \
++    --input_dir "$HOME/H3_Nextflow" \
+     --input_pat "H3_Africa_order_3220_original_annotation" \
+     --data "../sample.phe" \
+     --pheno PHE \
+diff --git a/scripts/02_pca_BigSNP.R b/scripts/02_pca_BigSNP.R
+index 1571607..db7395e 100644
+--- a/scripts/02_pca_BigSNP.R
++++ b/scripts/02_pca_BigSNP.R
+@@ -165,9 +165,10 @@ cat("Raw SNPs – 1000G:", n_snp_1000g_raw,
+ # -------------------------------------------------------
+ cat("=== Loading PLINK PCA for H3 internal structure ===\n")
+ 
+-# Read PCA eigenvectors from PLINK - try multiple possible locations
+-plink_eigenvec_file <- "/home/tafum/H3_imputation/PCA/New_PCA/H3_QC9_noOutliers_PCA.eigenvec"
+-plink_eigenval_file <- "/home/tafum/H3_imputation/PCA/New_PCA/H3_QC9_noOutliers_PCA.eigenval"
++# Read PCA eigenvectors from PLINK - try multiple possible locations.
++# Paths can be overridden via environment variables; defaults are relative to repo root.
++plink_eigenvec_file <- Sys.getenv("PLINK_EIGENVEC", "results/pca/H3_QC9_noOutliers_PCA.eigenvec")
++plink_eigenval_file <- Sys.getenv("PLINK_EIGENVAL", "results/pca/H3_QC9_noOutliers_PCA.eigenval")
+ 
+ # Also check current directory
+ if (!file.exists(plink_eigenvec_file)) {
+diff --git a/scripts/03_case_case_gwas.sh b/scripts/03_case_case_gwas.sh
+index f259c91..5f3ec2e 100644
+--- a/scripts/03_case_case_gwas.sh
++++ b/scripts/03_case_case_gwas.sh
+@@ -24,7 +24,7 @@
+ #   - results/gwas_top_hits.txt
+ #   - results/gwas_qc_summary.txt
+ #
+-# AUTHOR: [Your Name]
++# AUTHOR: Theophilus Afum
+ # DATE: 2024
+ # LICENSE: MIT
+ ################################################################################
+diff --git a/scripts/04_magma_analysis.sh b/scripts/04_magma_analysis.sh
+index 6b2dd96..0ab1734 100644
+--- a/scripts/04_magma_analysis.sh
++++ b/scripts/04_magma_analysis.sh
+@@ -9,13 +9,20 @@
+ set -e
+ 
+ # -------------------------------------------------------
+-# Configuration
++# Configuration (override any of these via environment variables)
++# Defaults are relative to the repository root.
+ # -------------------------------------------------------
+-GWAS_FILE="/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_MAF_vs_Mtbss_cleaned.txt"
+-GENO_PREFIX="/home/tafum/H3_imputation/final/GWAS/Final_GWAS/imputed_all_chr_QC"
+-OUTPUT_DIR="/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_plots/MAGMA_analysis"
+-GENE_LOC_FILE="$OUTPUT_DIR/NCBI38.gene.loc"
+-GENESETS_FILE="/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_plots/tb_immune_genesets.txt"
++GWAS_FILE="${GWAS_FILE:-results/gwas/GWAS_MAF_vs_Mtbss_cleaned.txt}"
++GENO_PREFIX="${GENO_PREFIX:-data/imputed_all_chr_QC}"
++OUTPUT_DIR="${OUTPUT_DIR:-results/magma}"
++GENESETS_FILE="${GENESETS_FILE:-configs/tb_immune_genesets.txt}"
++
++# Resolve input paths to absolute so they survive the `cd` into OUTPUT_DIR below.
++resolve_path() { readlink -f "$1" 2>/dev/null || echo "$1"; }
++GWAS_FILE="$(resolve_path "$GWAS_FILE")"
++GENO_PREFIX="$(resolve_path "$GENO_PREFIX")"
++GENESETS_FILE="$(resolve_path "$GENESETS_FILE")"
++export GWAS_FILE  # used by the embedded Rscript below
+ 
+ echo "================================"
+ echo "MAGMA Genome-Wide Analysis"
+@@ -23,8 +30,10 @@ echo "ALL Chromosomes"
+ echo "================================"
+ echo ""
+ 
+-mkdir -p ${OUTPUT_DIR}
+-cd ${OUTPUT_DIR}
++mkdir -p "${OUTPUT_DIR}"
++OUTPUT_DIR="$(resolve_path "$OUTPUT_DIR")"
++GENE_LOC_FILE="$OUTPUT_DIR/NCBI38.gene.loc"
++cd "${OUTPUT_DIR}"
+ 
+ # -------------------------------------------------------
+ # Step 1: Prepare genome-wide GWAS data
+@@ -35,7 +44,7 @@ Rscript - <<'EOF'
+ library(data.table)
+ library(dplyr)
+ 
+-gwas <- fread("/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_MAF_vs_Mtbss_cleaned.txt")
++gwas <- fread(Sys.getenv("GWAS_FILE"))
+ 
+ # Standardize columns
+ if ("#CHROM" %in% names(gwas)) {
+diff --git a/scripts/05_pathway_with_geneset_plot.R b/scripts/05_pathway_with_geneset_plot.R
+index bb0b58f..c8d0d43 100644
+--- a/scripts/05_pathway_with_geneset_plot.R
++++ b/scripts/05_pathway_with_geneset_plot.R
+@@ -13,8 +13,10 @@ suppressPackageStartupMessages({
+ # -------------------------------------------------------
+ # Configuration
+ # -------------------------------------------------------
+-MAGMA_GENE_FILE <- "/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_plots/MAGMA_analysis/genome_wide_gene_analysis.genes.out"
+-OUTPUT_DIR <- "/home/tafum/H3_imputation/final/GWAS/Final_GWAS/GWAS_plots/Pathway_analysis"
++# Paths can be overridden via environment variables; defaults are relative to the
++# repository root.
++MAGMA_GENE_FILE <- Sys.getenv("MAGMA_GENE_FILE", "results/magma/genome_wide_gene_analysis.genes.out")
++OUTPUT_DIR <- Sys.getenv("PATHWAY_OUTPUT_DIR", "results/pathway")
+ 
+ cat("================================\n")
+ cat("Pathway Enrichment Analysis\n")
+-- 
+2.43.0
+
